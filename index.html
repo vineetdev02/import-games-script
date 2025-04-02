@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Data Importer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Game Data Importer</h1>
+    
+    <div class="form-container">
+      <h2>Import Games to Supabase</h2>
+      
+      <div class="provider-selector">
+        <label for="provider">Select Provider:</label>
+        <select id="provider" name="provider">
+          <option value="gamemonitize">GameMonitize</option>
+          <option value="gamepix">GamePix</option>
+        </select>
+      </div>
+      
+      <div class="main-category-selector">
+        <label for="mainCategory">Select Main Category:</label>
+        <select id="mainCategory" name="mainCategory">
+          <option value="New Releases">New Releases</option>
+          <option value="Trending Now">Trending Now</option>
+          <option value="Most Played">Most Played</option>
+          <option value="Exclusive Titles">Exclusive Titles</option>
+          <option value="More Action">More Action</option>
+        </select>
+      </div>
+      
+      <div class="file-upload">
+        <label for="jsonFile">Select JSON File:</label>
+        <input type="file" id="jsonFile" name="jsonFile" accept=".json">
+      </div>
+      
+      <div class="supabase-config">
+        <h3>Supabase Configuration</h3>
+        <div class="form-group">
+          <label for="supabaseUrl">Supabase URL:</label>
+          <input type="text" id="supabaseUrl" name="supabaseUrl" placeholder="https://your-supabase-project.supabase.co">
+        </div>
+        <div class="form-group">
+          <label for="supabaseKey">Supabase Anon Key:</label>
+          <input type="password" id="supabaseKey" name="supabaseKey" placeholder="your-anon-key">
+        </div>
+      </div>
+      
+      <div class="buttons">
+        <button id="importBtn" type="button">Import Data</button>
+        <button id="clearBtn" type="button">Clear</button>
+      </div>
+    </div>
+    
+    <div class="results-container">
+      <h2>Import Results</h2>
+      <div class="progress-bar-container">
+        <div id="progressBar" class="progress-bar"></div>
+      </div>
+      <div id="statusMessage" class="status-message"></div>
+      <div id="results" class="results">
+        <table id="resultsTable" class="results-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Title</th>
+              <th>Provider</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js"></script>
+</body>
+</html>
