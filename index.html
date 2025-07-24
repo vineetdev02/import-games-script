@@ -6,55 +6,151 @@
   <title>Game Data Importer</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="dark-theme">
   <div class="container">
     <h1>Game Data Importer</h1>
     
     <div class="form-container">
       <h2>Import Games to Supabase</h2>
-      
-      <div class="provider-selector">
-        <label for="provider">Select Provider:</label>
-        <select id="provider" name="provider">
-          <option value="gamemonitize">GameMonitize</option>
-          <option value="gamepix">GamePix</option>
-        </select>
+
+      <div class="import-mode-selector">
+        <input type="radio" id="jsonMode" name="importMode" value="json" checked>
+        <label for="jsonMode">JSON Import</label>
+        <input type="radio" id="manualMode" name="importMode" value="manual">
+        <label for="manualMode">Manual Entry</label>
       </div>
-      
-      <div class="main-category-selector">
-        <label for="mainCategory">Select Main Category:</label>
-        <select id="mainCategory" name="mainCategory">
-          <option value="New Releases">New Releases</option>
-          <option value="Trending Now">Trending Now</option>
-          <option value="Most Played">Most Played</option>
-          <option value="Exclusive Titles">Exclusive Titles</option>
-          <option value="More Action">More Action</option>
-        </select>
+
+      <div id="jsonImportForm">
+        <div class="provider-selector">
+          <label for="provider">Select Provider:</label>
+          <select id="provider" name="provider">
+            <option value="gamemonitize">GameMonitize</option>
+            <option value="gamepix">GamePix</option>
+          </select>
+        </div>
+
+        <div class="category-selector">
+          <label for="mainCategory">Select Main Category:</label>
+          <select id="mainCategory" name="mainCategory">
+            <option value="New Releases">New Releases</option>
+            <option value="Trending Now">Trending Now</option>
+            <option value="Most Played">Most Played</option>
+            <option value="Featured Games">Featured Games</option>
+            <option value="Exclusive Titles">Exclusive Titles</option>
+            <option value="Banner Games">Banner Games</option>
+            <option value="More Action">More Action</option>
+          </select>
+        </div>
+        
+        <div class="file-upload">
+          <label for="jsonFile">Select JSON File:</label>
+          <input type="file" id="jsonFile" name="jsonFile" accept=".json">
+        </div>
+        
+        <div class="buttons">
+          <button id="importBtn" type="button">Import Data</button>
+          <button id="clearBtn" type="button">Clear</button>
+        </div>
       </div>
-      
-      <div class="file-upload">
-        <label for="jsonFile">Select JSON File:</label>
-        <input type="file" id="jsonFile" name="jsonFile" accept=".json">
+
+      <div id="manualEntryForm" class="hidden">
+        <div class="form-group">
+          <label for="manual_title">Title:</label>
+          <input type="text" id="manual_title" name="manual_title">
+        </div>
+        <div class="form-group">
+          <label for="manual_description">Description:</label>
+          <textarea id="manual_description" name="manual_description" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="manual_instructions">Instructions:</label>
+          <textarea id="manual_instructions" name="manual_instructions" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="manual_play_url">Play URL:</label>
+          <input type="text" id="manual_play_url" name="manual_play_url">
+        </div>
+        <div class="form-group">
+          <label for="manual_category">Category:</label>
+          <input type="text" id="manual_category" name="manual_category">
+        </div>
+        <div class="form-group">
+          <label for="manual_main_category">Main Category:</label>
+          <select id="manual_main_category" name="manual_main_category">
+            <option value="New Releases">New Releases</option>
+            <option value="Trending Now">Trending Now</option>
+            <option value="Most Played">Most Played</option>
+            <option value="Featured Games">Featured Games</option>
+            <option value="Exclusive Titles">Exclusive Titles</option>
+            <option value="Banner Games">Banner Games</option>
+            <option value="More Action">More Action</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="manual_tags">Tags (comma-separated):</label>
+          <input type="text" id="manual_tags" name="manual_tags">
+        </div>
+        <div class="form-group">
+          <label for="manual_width">Width:</label>
+          <input type="number" id="manual_width" name="manual_width" value="800">
+        </div>
+        <div class="form-group">
+          <label for="manual_height">Height:</label>
+          <input type="number" id="manual_height" name="manual_height" value="600">
+        </div>
+        <div class="form-group">
+          <label for="manual_thumbnail_image">Thumbnail URL:</label>
+          <input type="text" id="manual_thumbnail_image" name="manual_thumbnail_image">
+        </div>
+        <div class="form-group">
+          <label for="manual_provider">Provider:</label>
+          <input type="text" id="manual_provider" name="manual_provider" value="manual">
+        </div>
+        <div class="form-group">
+          <label for="manual_provider_game_id">Provider Game ID:</label>
+          <input type="text" id="manual_provider_game_id" name="manual_provider_game_id">
+        </div>
+        <div class="form-group">
+          <input type="checkbox" id="manual_is_featured" name="manual_is_featured">
+          <label for="manual_is_featured">Featured Game</label>
+        </div>
+        <div class="buttons">
+          <button id="manualStoreBtn" type="button">Store</button>
+          <button id="manualPreviewBtn" type="button">Preview</button>
+          <button id="manualClearBtn" type="button">Clear</button>
+        </div>
       </div>
       
       <div class="supabase-config">
         <h3>Supabase Configuration</h3>
         <div class="form-group">
           <label for="supabaseUrl">Supabase URL:</label>
-          <input type="text" id="supabaseUrl" name="supabaseUrl" placeholder="https://your-supabase-project.supabase.co">
+          <input type="text" id="supabaseUrl" name="supabaseUrl" placeholder="https://your-supabase-project.supabase.co" value="https://bxpuvwltmwyhcpbllutl.supabase.co">
         </div>
         <div class="form-group">
           <label for="supabaseKey">Supabase Anon Key:</label>
-          <input type="password" id="supabaseKey" name="supabaseKey" placeholder="your-anon-key">
+          <input type="password" id="supabaseKey" name="supabaseKey" placeholder="your-anon-key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4cHV2d2x0bXd5aGNwYmxsdXRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MjQ4NzEwNiwiZXhwIjoyMDU4MDYzMTA2fQ.fwo9dwbYaPf-OrmQWHL4nGeMmvaVIxGnEcqR4-DoVFs">
         </div>
-      </div>
-      
-      <div class="buttons">
-        <button id="importBtn" type="button">Import Data</button>
-        <button id="clearBtn" type="button">Clear</button>
+        <div class="form-group save-credentials-group">
+          <input type="checkbox" id="saveCredentials" name="saveCredentials" checked>
+          <label for="saveCredentials" class="checkbox-label">Remember credentials</label>
+        </div>
       </div>
     </div>
     
+    <!-- New Game Preview Container -->
+    <div id="gamePreviewContainer" class="game-preview-container hidden">
+      <h2>Review Games Before Upload</h2>
+      <div class="preview-controls">
+        <button id="submitAllBtn" type="button">Submit All</button>
+      </div>
+      
+      <div id="gamesList" class="games-list">
+        <!-- Game items will be added here dynamically -->
+      </div>
+    </div>
+    
+    <!-- Results Container -->
     <div class="results-container">
       <h2>Import Results</h2>
       <div class="progress-bar-container">
@@ -73,6 +169,26 @@
           </thead>
           <tbody id="resultsBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div id="confirmationModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Confirm Upload</h2>
+        <span class="close">&times;</span>
+      </div>
+      <div class="modal-body">
+        <p>You are about to upload the following games to Supabase:</p>
+        <div id="modalGameList" class="modal-game-list">
+          <!-- Game summary items will be added here dynamically -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="cancelUploadBtn" type="button">Cancel</button>
+        <button id="confirmUploadBtn" type="button">Confirm Upload</button>
       </div>
     </div>
   </div>

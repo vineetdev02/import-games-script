@@ -1,15 +1,119 @@
 # Game Data Importer
 
-A simple web application to import game data from different providers (GameMonitize, GamePix) into a Supabase database.
+A tool to import game data from various providers into a Supabase database with review, editing, and confirmation capabilities.
 
 ## Features
 
-- Import games from multiple providers
-- Supports various data formats (GameMonitize, GamePix)
-- Automatically maps provider-specific data to your Supabase schema
-- Updates existing games or inserts new ones
-- Displays import progress and results
-- Simple and user-friendly interface
+### 1. Game Categories
+- Supports multiple categories including: 
+  - New Releases
+  - Trending Now
+  - Most Played
+  - Featured Games 
+  - Exclusive Titles
+  - **Banner Games** (New!)
+  - More Action
+
+### 2. Two-Step Import Process
+- **First Step**: Import and review games
+  - Upload game data files (JSON format)
+  - See all games in a visual grid
+  - Play games in embedded iframes
+  - Edit any game details
+
+- **Second Step**: Confirm and upload
+  - Review final list in confirmation modal
+  - Upload all games to Supabase database
+
+### 3. Game Editing Features
+- Edit any game property:
+  - Title
+  - Description
+  - Instructions
+  - Category and Main Category
+  - Tags
+  - Dimensions (width/height)
+  - Media URLs
+  - Featured status
+- Remove unwanted games from the list
+
+### 4. Dark Mode UI
+- Complete dark theme styling
+- High contrast for readability
+- Mobile responsive design
+
+### 5. Credential Management
+- Save Supabase credentials locally
+- No need to re-enter URL and API key
+- Optional feature that can be toggled on/off
+
+## How to Use
+
+1. Select a game provider (GameMonitize or GamePix)
+2. Choose a main category for the imported games
+3. Select a JSON file to import
+4. Enter your Supabase credentials (or they'll be pre-filled if previously saved)
+5. Check "Remember credentials" to save your Supabase URL and key for next time
+6. Click "Import Data" to load games for review
+7. Edit any game details or remove unwanted games
+8. Click "Submit All" when ready
+9. Review the final list in the confirmation modal
+10. Click "Confirm Upload" to save to Supabase
+
+## Technical Details
+
+- Built with vanilla JavaScript, HTML, and CSS
+- Uses the Supabase JavaScript client for database operations
+- Responsive design for all device sizes
+- Dark mode UI by default
+
+## File Formats
+
+### GameMonitize
+The application expects GameMonitize JSON files in the following format:
+```json
+[
+  {
+    "id": "12345",
+    "title": "Game Title",
+    "description": "Game description text",
+    "instructions": "How to play the game",
+    "url": "https://game-url.com",
+    "category": "Action",
+    "tags": "Tag1, Tag2, Tag3",
+    "thumb": "https://thumbnail-url.com",
+    "width": "800",
+    "height": "600"
+  },
+  ...
+]
+```
+
+### GamePix
+For GamePix, the expected format is:
+```json
+{
+  "items": [
+    {
+      "id": "12345",
+      "title": "Game Title",
+      "description": "Game description",
+      "namespace": "game-slug",
+      "category": "Action",
+      "orientation": "landscape",
+      "quality_score": 0.92,
+      "width": 800,
+      "height": 600,
+      "date_modified": "2023-01-01T00:00:00Z",
+      "date_published": "2023-01-01T00:00:00Z",
+      "banner_image": "https://banner-url.com",
+      "image": "https://image-url.com",
+      "url": "https://game-url.com"
+    },
+    ...
+  ]
+}
+```
 
 ## Prerequisites
 

@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iframe Generator & Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+            color: #e4e6ea;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px 0;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            font-size: 1.1rem;
+            opacity: 0.8;
+            margin-bottom: 20px;
+        }
+
+        .feature-tags {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            background: rgba(102, 126, 234, 0.2);
+            padding: 8px 16px;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            border: 1px solid rgba(102, 126, 234, 0.3);
+        }
+
+        .section {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(15px);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            margin-bottom: 20px;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-icon {
+            width: 30px;
+            height: 30px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #b8bcc8;
+        }
+
+        input[type="url"], input[type="number"], textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #e4e6ea;
+            font-size: 1rem;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        input[type="url"]:focus, input[type="number"]:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+        }
+
+        input::placeholder, textarea::placeholder {
+            color: #888;
+        }
+
+        .dimensions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-copy {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            padding: 10px 20px;
+            font-size: 0.9rem;
+            margin-top: 15px;
+        }
+
+        .btn-copy:hover {
+            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.4);
+        }
+
+        .code-output {
+            background: #0d1117;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            color: #58a6ff;
+            word-break: break-all;
+            position: relative;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .code-title {
+            font-weight: 600;
+            color: #e4e6ea;
+        }
+
+        .iframe-preview {
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            background: #000;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+
+        .iframe-preview iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 8px;
+        }
+
+        .placeholder {
+            text-align: center;
+            color: #888;
+            font-style: italic;
+            padding: 50px;
+        }
+
+        .error-message {
+            background: rgba(220, 53, 69, 0.2);
+            color: #f8d7da;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(220, 53, 69, 0.3);
+            margin: 15px 0;
+            display: none;
+        }
+
+        .success-message {
+            background: rgba(40, 167, 69, 0.2);
+            color: #d4edda;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(40, 167, 69, 0.3);
+            margin: 15px 0;
+            display: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid #667eea;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .dimensions {
+                grid-template-columns: 1fr;
+            }
+            
+            .logo {
+                font-size: 2rem;
+            }
+            
+            .feature-tags {
+                justify-content: center;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">🖼️ Iframe Tools Pro</div>
+            <div class="subtitle">Generate, Test & Share iFrames with Professional Design</div>
+            <div class="feature-tags">
+                <span class="tag">URL to iFrame</span>
+                <span class="tag">Live Preview</span>
+                <span class="tag">Copy Code</span>
+                <span class="tag">Error Handling</span>
+            </div>
+        </header>
+
+        <!-- Iframe Generator Section -->
+        <div class="section">
+            <h2 class="section-title">
+                <div class="section-icon">🔗</div>
+                Iframe Generator
+            </h2>
+            
+            <div class="input-group">
+                <label for="urlInput">Website URL</label>
+                <input type="url" id="urlInput" placeholder="https://www.example.com/page" required>
+            </div>
+            
+            <div class="dimensions">
+                <div class="input-group">
+                    <label for="widthInput">Width (px or %)</label>
+                    <input type="text" id="widthInput" placeholder="800" value="800">
+                </div>
+                <div class="input-group">
+                    <label for="heightInput">Height (px)</label>
+                    <input type="number" id="heightInput" placeholder="600" value="600" min="100">
+                </div>
+            </div>
+            
+            <button class="btn" onclick="generateIframe()">
+                ⚡ Generate Iframe Code
+            </button>
+            
+            <div class="error-message" id="generateError"></div>
+            <div class="success-message" id="generateSuccess"></div>
+            
+            <div id="iframeOutput" style="display: none;">
+                <div class="code-header">
+                    <div class="code-title">Generated Iframe Code</div>
+                    <button class="btn-copy" onclick="copyIframeCode()">📋 Copy Code</button>
+                </div>
+                <div class="code-output" id="iframeCode"></div>
+            </div>
+        </div>
+
+        <!-- Iframe Tester Section -->
+        <div class="section">
+            <h2 class="section-title">
+                <div class="section-icon">🧪</div>
+                Iframe Tester & Preview
+            </h2>
+            
+            <div class="input-group">
+                <label for="testIframeInput">Paste Iframe Code</label>
+                <textarea id="testIframeInput" rows="4" placeholder='<iframe src="https://example.com" width="800" height="600"></iframe>'></textarea>
+            </div>
+            
+            <button class="btn" onclick="testIframe()">
+                🔍 Test & Preview Iframe
+            </button>
+            
+            <div class="loading" id="testLoading">
+                <div class="spinner"></div>
+                Loading preview...
+            </div>
+            
+            <div class="error-message" id="testError"></div>
+            <div class="success-message" id="testSuccess"></div>
+            
+            <div class="iframe-preview" id="iframePreview">
+                <div class="placeholder">Iframe preview will appear here</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Utility functions
+        function showError(elementId, message) {
+            const errorEl = document.getElementById(elementId);
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => {
+                errorEl.style.display = 'none';
+            }, 5000);
+        }
+
+        function showSuccess(elementId, message) {
+            const successEl = document.getElementById(elementId);
+            successEl.textContent = message;
+            successEl.style.display = 'block';
+            setTimeout(() => {
+                successEl.style.display = 'none';
+            }, 3000);
+        }
+
+        function isValidUrl(string) {
+            try {
+                const url = new URL(string);
+                return url.protocol === 'http:' || url.protocol === 'https:';
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function sanitizeInput(input) {
+            const div = document.createElement('div');
+            div.textContent = input;
+            return div.innerHTML;
+        }
+
+        // Generate Iframe Code
+        function generateIframe() {
+            const urlInput = document.getElementById('urlInput').value.trim();
+            const widthInput = document.getElementById('widthInput').value.trim();
+            const heightInput = document.getElementById('heightInput').value.trim();
+
+            // Clear previous messages
+            document.getElementById('generateError').style.display = 'none';
+            document.getElementById('generateSuccess').style.display = 'none';
+
+            // Validation
+            if (!urlInput) {
+                showError('generateError', 'Please enter a valid URL');
+                return;
+            }
+
+            if (!isValidUrl(urlInput)) {
+                showError('generateError', 'Please enter a valid URL (must start with http:// or https://)');
+                return;
+            }
+
+            if (!widthInput || !heightInput) {
+                showError('generateError', 'Please enter both width and height values');
+                return;
+            }
+
+            if (parseInt(heightInput) < 100) {
+                showError('generateError', 'Height must be at least 100 pixels');
+                return;
+            }
+
+            // Generate iframe code
+            const width = widthInput.includes('%') ? widthInput : `${widthInput}px`;
+            const height = `${heightInput}px`;
+            
+            const iframeCode = `<iframe src="${sanitizeInput(urlInput)}" width="${sanitizeInput(widthInput)}" height="${sanitizeInput(heightInput)}" frameborder="0" allowfullscreen style="border: none; border-radius: 8px;"></iframe>`;
+
+            // Display generated code
+            document.getElementById('iframeCode').textContent = iframeCode;
+            document.getElementById('iframeOutput').style.display = 'block';
+            
+            showSuccess('generateSuccess', 'Iframe code generated successfully!');
+
+            // Scroll to output
+            document.getElementById('iframeOutput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // Copy Iframe Code
+        function copyIframeCode() {
+            const codeText = document.getElementById('iframeCode').textContent;
+            
+            if (!codeText) {
+                showError('generateError', 'No code to copy. Please generate iframe code first.');
+                return;
+            }
+
+            navigator.clipboard.writeText(codeText).then(() => {
+                showSuccess('generateSuccess', 'Iframe code copied to clipboard!');
+                
+                // Change button text temporarily
+                const copyBtn = event.target;
+                const originalText = copyBtn.innerHTML;
+                copyBtn.innerHTML = '✅ Copied!';
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                }, 2000);
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = codeText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showSuccess('generateSuccess', 'Iframe code copied to clipboard!');
+            });
+        }
+
+        // Test Iframe
+        function testIframe() {
+            const iframeInput = document.getElementById('testIframeInput').value.trim();
+            const previewContainer = document.getElementById('iframePreview');
+            const loading = document.getElementById('testLoading');
+
+            // Clear previous messages
+            document.getElementById('testError').style.display = 'none';
+            document.getElementById('testSuccess').style.display = 'none';
+
+            if (!iframeInput) {
+                showError('testError', 'Please paste an iframe code to test');
+                return;
+            }
+
+            // Basic iframe validation
+            if (!iframeInput.toLowerCase().includes('<iframe') || !iframeInput.toLowerCase().includes('</iframe>')) {
+                showError('testError', 'Invalid iframe code. Please ensure it contains proper iframe tags.');
+                return;
+            }
+
+            // Show loading
+            loading.style.display = 'block';
+
+            // Extract src from iframe code
+            const srcMatch = iframeInput.match(/src\s*=\s*["']([^"']+)["']/i);
+            if (!srcMatch) {
+                loading.style.display = 'none';
+                showError('testError', 'Could not find src attribute in iframe code');
+                return;
+            }
+
+            const src = srcMatch[1];
+            if (!isValidUrl(src)) {
+                loading.style.display = 'none';
+                showError('testError', 'Invalid URL in iframe src attribute');
+                return;
+            }
+
+            // Create iframe element safely
+            const iframe = document.createElement('iframe');
+            iframe.src = src;
+            
+            // Extract dimensions if available
+            const widthMatch = iframeInput.match(/width\s*=\s*["']([^"']+)["']/i);
+            const heightMatch = iframeInput.match(/height\s*=\s*["']([^"']+)["']/i);
+            
+            if (widthMatch) iframe.width = widthMatch[1];
+            if (heightMatch) iframe.height = heightMatch[1];
+            
+            iframe.frameBorder = "0";
+            iframe.style.cssText = "width: 100%; height: 100%; min-height: 400px; border: none; border-radius: 8px;";
+
+            // Handle load events
+            iframe.onload = () => {
+                loading.style.display = 'none';
+                showSuccess('testSuccess', 'Iframe loaded successfully!');
+            };
+
+            iframe.onerror = () => {
+                loading.style.display = 'none';
+                showError('testError', 'Failed to load iframe content. The URL might be invalid or blocked.');
+            };
+
+            // Clear preview and add new iframe
+            previewContainer.innerHTML = '';
+            previewContainer.appendChild(iframe);
+
+            // Timeout for loading
+            setTimeout(() => {
+                if (loading.style.display !== 'none') {
+                    loading.style.display = 'none';
+                    showError('testError', 'Iframe is taking too long to load. Please check the URL.');
+                }
+            }, 10000);
+
+            // Scroll to preview
+            previewContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        // Enter key support
+        document.getElementById('urlInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') generateIframe();
+        });
+
+        document.getElementById('heightInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') generateIframe();
+        });
+
+        document.getElementById('testIframeInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) testIframe();
+        });
+
+        // Auto-resize textarea
+        const textarea = document.getElementById('testIframeInput');
+        textarea.addEventListener('input', () => {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+        });
+    </script>
+</body>
+</html>

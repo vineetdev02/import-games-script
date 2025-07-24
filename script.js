@@ -5,35 +5,120 @@ document.addEventListener('DOMContentLoaded', () => {
   const jsonFileInput = document.getElementById('jsonFile');
   const supabaseUrlInput = document.getElementById('supabaseUrl');
   const supabaseKeyInput = document.getElementById('supabaseKey');
+  const saveCredentialsCheckbox = document.getElementById('saveCredentials');
   const importBtn = document.getElementById('importBtn');
   const clearBtn = document.getElementById('clearBtn');
   const progressBar = document.getElementById('progressBar');
   const statusMessage = document.getElementById('statusMessage');
   const resultsBody = document.getElementById('resultsBody');
+  const gamePreviewContainer = document.getElementById('gamePreviewContainer');
+  const gamesList = document.getElementById('gamesList');
+  const submitAllBtn = document.getElementById('submitAllBtn');
+  const confirmationModal = document.getElementById('confirmationModal');
+  const modalGameList = document.getElementById('modalGameList');
+  const confirmUploadBtn = document.getElementById('confirmUploadBtn');
+  const cancelUploadBtn = document.getElementById('cancelUploadBtn');
+  const closeModalBtn = document.querySelector('.close');
+
+  // New manual entry form elements
+  const jsonModeRadio = document.getElementById('jsonMode');
+  const manualModeRadio = document.getElementById('manualMode');
+  const jsonImportForm = document.getElementById('jsonImportForm');
+  const manualEntryForm = document.getElementById('manualEntryForm');
+  const manualStoreBtn = document.getElementById('manualStoreBtn');
+  const manualPreviewBtn = document.getElementById('manualPreviewBtn');
+  const manualClearBtn = document.getElementById('manualClearBtn');
 
   // Static main categories
   const mainCategories = [
     "New Releases",
     "Trending Now",
     "Most Played",
+    "Featured Games",
     "Exclusive Titles",
+    "Banner Games",
     "More Action"
   ];
 
   // Initialize Supabase client
   let supabaseClient = null;
+  
+  // Store processed games
+  let processedGames = [];
+
+  // Load saved Supabase credentials if they exist
+  loadSavedCredentials();
 
   // Event listeners
   importBtn.addEventListener('click', handleImport);
   clearBtn.addEventListener('click', clearForm);
+  submitAllBtn.addEventListener('click', showConfirmationModal);
+  confirmUploadBtn.addEventListener('click', handleSubmitAll);
+  cancelUploadBtn.addEventListener('click', closeModal);
+  closeModalBtn.addEventListener('click', closeModal);
+  jsonModeRadio.addEventListener('change', toggleImportMode);
+  manualModeRadio.addEventListener('change', toggleImportMode);
+  manualStoreBtn.addEventListener('click', handleManualStore);
+  manualPreviewBtn.addEventListener('click', handleManualPreview);
+  manualClearBtn.addEventListener('click', clearManualForm);
+  
+  // Close modal if user clicks outside of it
+  window.addEventListener('click', (event) => {
+    if (event.target === confirmationModal) {
+      closeModal();
+    }
+  });
 
-  // Handle import process
+  // Toggle between JSON and manual import modes
+  function toggleImportMode() {
+    if (manualModeRadio.checked) {
+      jsonImportForm.classList.add('hidden');
+      manualEntryForm.classList.remove('hidden');
+    } else {
+      jsonImportForm.classList.remove('hidden');
+      manualEntryForm.classList.add('hidden');
+    }
+  }
+
+  // Load saved credentials from localStorage
+  function loadSavedCredentials() {
+    const savedUrl = localStorage.getItem('supabaseUrl');
+    const savedKey = localStorage.getItem('supabaseKey');
+    
+    if (savedUrl) {
+      supabaseUrlInput.value = savedUrl;
+    }
+    
+    if (savedKey) {
+      supabaseKeyInput.value = savedKey;
+    }
+    
+    if (savedUrl && savedKey) {
+      saveCredentialsCheckbox.checked = true;
+    }
+  }
+
+  // Save credentials to localStorage
+  function saveCredentials() {
+    if (saveCredentialsCheckbox.checked) {
+      localStorage.setItem('supabaseUrl', supabaseUrlInput.value);
+      localStorage.setItem('supabaseKey', supabaseKeyInput.value);
+    } else {
+      localStorage.removeItem('supabaseUrl');
+      localStorage.removeItem('supabaseKey');
+    }
+  }
+
+  // Handle initial import process to display games for review
   async function handleImport() {
     try {
       // Validate inputs
       if (!validateInputs()) {
         return;
       }
+
+      // Save credentials if checkbox is checked
+      saveCredentials();
 
       // Initialize Supabase client
       initSupabase();
@@ -67,13 +152,370 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      updateStatus(`Found ${games.length} games. Starting import...`, 'info');
+      updateStatus(`Found ${games.length} games. Ready for review.`, 'success');
       
-      // Import games to Supabase
-      await importGamesToSupabase(games, provider);
+      // Store processed games
+      processedGames = games;
+      
+      // Display games for review
+      displayGamesForReview(games);
       
     } catch (error) {
       console.error('Import error:', error);
+      updateStatus(`Error: ${error.message}`, 'error');
+    }
+  }
+  
+  // Display games for review in the UI
+  function displayGamesForReview(games) {
+    // Clear any existing games
+    gamesList.innerHTML = '';
+    
+    // Show the game preview container
+    gamePreviewContainer.classList.remove('hidden');
+    
+    // Create a card for each game
+    games.forEach((game, index) => {
+      const gameCard = document.createElement('div');
+      gameCard.className = 'game-item';
+      gameCard.dataset.index = index;
+      
+      // Create the iframe container
+      const iframeContainer = document.createElement('div');
+      iframeContainer.className = 'game-iframe-container';
+      
+      // Create the iframe
+      const iframe = document.createElement('iframe');
+      iframe.className = 'game-iframe';
+      iframe.src = game.play_url;
+      iframe.setAttribute('allowfullscreen', 'true');
+      
+      iframeContainer.appendChild(iframe);
+      gameCard.appendChild(iframeContainer);
+      
+      // Create game details section
+      const detailsContainer = document.createElement('div');
+      detailsContainer.className = 'game-details';
+      
+      // Create editable title
+      const titleLabel = document.createElement('label');
+      titleLabel.textContent = 'Title:';
+      titleLabel.className = 'detail-label';
+
+      const titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.className = 'game-title-input';
+      titleInput.value = game.title;
+      titleInput.dataset.field = 'title';
+      titleInput.addEventListener('change', (e) => updateGameData(index, 'title', e.target.value));
+      
+      // Create editable description
+      const descriptionLabel = document.createElement('label');
+      descriptionLabel.textContent = 'Description:';
+      descriptionLabel.className = 'detail-label';
+
+      const descriptionTextarea = document.createElement('textarea');
+      descriptionTextarea.className = 'game-description';
+      descriptionTextarea.value = game.description;
+      descriptionTextarea.rows = 4;
+      descriptionTextarea.dataset.field = 'description';
+      descriptionTextarea.addEventListener('change', (e) => updateGameData(index, 'description', e.target.value));
+
+      // Create editable instructions
+      const instructionsLabel = document.createElement('label');
+      instructionsLabel.textContent = 'Instructions:';
+      instructionsLabel.className = 'detail-label';
+
+      const instructionsTextarea = document.createElement('textarea');
+      instructionsTextarea.className = 'game-instructions';
+      instructionsTextarea.value = game.instructions || '';
+      instructionsTextarea.rows = 3;
+      instructionsTextarea.dataset.field = 'instructions';
+      instructionsTextarea.addEventListener('change', (e) => updateGameData(index, 'instructions', e.target.value));
+      
+      // Create additional details section
+      const additionalDetails = document.createElement('div');
+      additionalDetails.className = 'additional-details';
+      
+      // Add category input
+      const categoryLabel = document.createElement('label');
+      categoryLabel.textContent = 'Category:';
+      categoryLabel.className = 'detail-label';
+
+      const categoryInput = document.createElement('input');
+      categoryInput.type = 'text';
+      categoryInput.className = 'detail-input';
+      categoryInput.value = game.category;
+      categoryInput.dataset.field = 'category';
+      categoryInput.addEventListener('change', (e) => updateGameData(index, 'category', e.target.value));
+      
+      // Add main category select
+      const mainCategoryLabel = document.createElement('label');
+      mainCategoryLabel.textContent = 'Main Category:';
+      mainCategoryLabel.className = 'detail-label';
+
+      const mainCategorySelect = document.createElement('select');
+      mainCategorySelect.className = 'detail-select';
+      mainCategorySelect.dataset.field = 'main_category';
+      
+      // Add options for each main category
+      mainCategories.forEach(category => {
+        const option = document.createElement('option');
+        option.value = category;
+        option.textContent = category;
+        option.selected = game.main_category === category;
+        mainCategorySelect.appendChild(option);
+      });
+      
+      mainCategorySelect.addEventListener('change', (e) => updateGameData(index, 'main_category', e.target.value));
+      
+      // Add tags input
+      const tagsLabel = document.createElement('label');
+      tagsLabel.textContent = 'Tags:';
+      tagsLabel.className = 'detail-label';
+
+      const tagsInput = document.createElement('input');
+      tagsInput.type = 'text';
+      tagsInput.className = 'detail-input';
+      tagsInput.value = game.tags || '';
+      tagsInput.dataset.field = 'tags';
+      tagsInput.addEventListener('change', (e) => updateGameData(index, 'tags', e.target.value));
+      
+      // Add dimensions input
+      const dimensionsContainer = document.createElement('div');
+      dimensionsContainer.className = 'dimensions-container';
+      
+      const widthLabel = document.createElement('label');
+      widthLabel.textContent = 'Width:';
+      widthLabel.className = 'detail-label-small';
+      
+      const widthInput = document.createElement('input');
+      widthInput.type = 'text';
+      widthInput.className = 'detail-input-small';
+      widthInput.value = game.width || '';
+      widthInput.dataset.field = 'width';
+      widthInput.addEventListener('change', (e) => updateGameData(index, 'width', e.target.value));
+      
+      const heightLabel = document.createElement('label');
+      heightLabel.textContent = 'Height:';
+      heightLabel.className = 'detail-label-small';
+      
+      const heightInput = document.createElement('input');
+      heightInput.type = 'text';
+      heightInput.className = 'detail-input-small';
+      heightInput.value = game.height || '';
+      heightInput.dataset.field = 'height';
+      heightInput.addEventListener('change', (e) => updateGameData(index, 'height', e.target.value));
+      
+      dimensionsContainer.appendChild(widthLabel);
+      dimensionsContainer.appendChild(widthInput);
+      dimensionsContainer.appendChild(heightLabel);
+      dimensionsContainer.appendChild(heightInput);
+      
+      // Add is featured checkbox
+      const featuredContainer = document.createElement('div');
+      featuredContainer.className = 'featured-container';
+      
+      const featuredLabel = document.createElement('label');
+      featuredLabel.textContent = 'Featured Game:';
+      featuredLabel.className = 'detail-label';
+      
+      const featuredCheckbox = document.createElement('input');
+      featuredCheckbox.type = 'checkbox';
+      featuredCheckbox.className = 'detail-checkbox';
+      featuredCheckbox.checked = game.is_featured || false;
+      featuredCheckbox.dataset.field = 'is_featured';
+      featuredCheckbox.addEventListener('change', (e) => updateGameData(index, 'is_featured', e.target.checked));
+      
+      featuredContainer.appendChild(featuredLabel);
+      featuredContainer.appendChild(featuredCheckbox);
+      
+      // Add game URL input
+      const urlLabel = document.createElement('label');
+      urlLabel.textContent = 'Game URL:';
+      urlLabel.className = 'detail-label';
+      
+      const urlInput = document.createElement('input');
+      urlInput.type = 'text';
+      urlInput.className = 'detail-input';
+      urlInput.value = game.play_url || '';
+      urlInput.dataset.field = 'play_url';
+      urlInput.addEventListener('change', (e) => {
+        updateGameData(index, 'play_url', e.target.value);
+        // Update iframe src
+        iframe.src = e.target.value;
+      });
+      
+      // Add thumbnail image URL input
+      const thumbnailLabel = document.createElement('label');
+      thumbnailLabel.textContent = 'Thumbnail URL:';
+      thumbnailLabel.className = 'detail-label';
+      
+      const thumbnailInput = document.createElement('input');
+      thumbnailInput.type = 'text';
+      thumbnailInput.className = 'detail-input';
+      thumbnailInput.value = game.thumbnail_image || '';
+      thumbnailInput.dataset.field = 'thumbnail_image';
+      thumbnailInput.addEventListener('change', (e) => updateGameData(index, 'thumbnail_image', e.target.value));
+      
+      // Add actions section
+      const actions = document.createElement('div');
+      actions.className = 'game-actions';
+      
+      // Add remove button
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-game-btn';
+      removeBtn.textContent = 'Remove Game';
+      removeBtn.addEventListener('click', () => removeGame(index));
+      
+      // Append all elements
+      additionalDetails.appendChild(categoryLabel);
+      additionalDetails.appendChild(categoryInput);
+      additionalDetails.appendChild(mainCategoryLabel);
+      additionalDetails.appendChild(mainCategorySelect);
+      additionalDetails.appendChild(tagsLabel);
+      additionalDetails.appendChild(tagsInput);
+      additionalDetails.appendChild(dimensionsContainer);
+      additionalDetails.appendChild(featuredContainer);
+      additionalDetails.appendChild(urlLabel);
+      additionalDetails.appendChild(urlInput);
+      additionalDetails.appendChild(thumbnailLabel);
+      additionalDetails.appendChild(thumbnailInput);
+      
+      actions.appendChild(removeBtn);
+      
+      detailsContainer.appendChild(titleLabel);
+      detailsContainer.appendChild(titleInput);
+      detailsContainer.appendChild(descriptionLabel);
+      detailsContainer.appendChild(descriptionTextarea);
+      detailsContainer.appendChild(instructionsLabel);
+      detailsContainer.appendChild(instructionsTextarea);
+      detailsContainer.appendChild(additionalDetails);
+      detailsContainer.appendChild(actions);
+      
+      gameCard.appendChild(detailsContainer);
+      
+      // Add to the games list
+      gamesList.appendChild(gameCard);
+    });
+  }
+  
+  // Update game data in memory
+  function updateGameData(index, field, value) {
+    if (index >= 0 && index < processedGames.length) {
+      processedGames[index][field] = value;
+    }
+  }
+  
+  // Remove a game from the list
+  function removeGame(index) {
+    if (index >= 0 && index < processedGames.length) {
+      // Remove from data array
+      processedGames.splice(index, 1);
+      
+      // Redisplay games
+      displayGamesForReview(processedGames);
+    }
+  }
+  
+  // Show confirmation modal
+  function showConfirmationModal() {
+    if (processedGames.length === 0) {
+      updateStatus('No games to upload', 'error');
+      return;
+    }
+    
+    // Populate the modal with game list
+    modalGameList.innerHTML = '';
+    
+    processedGames.forEach((game, index) => {
+      const gameItem = document.createElement('div');
+      gameItem.className = 'modal-game-item';
+      
+      // Create game summary content
+      const gameTitle = document.createElement('h3');
+      gameTitle.className = 'modal-game-title';
+      gameTitle.textContent = game.title;
+      
+      const gameInfo = document.createElement('div');
+      gameInfo.className = 'modal-game-info';
+      
+      // Add thumbnail
+      if (game.thumbnail_image) {
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'modal-game-thumbnail';
+        thumbnail.src = game.thumbnail_image;
+        thumbnail.alt = game.title;
+        gameInfo.appendChild(thumbnail);
+      }
+      
+      // Add details
+      const gameDetails = document.createElement('div');
+      gameDetails.className = 'modal-game-details';
+      
+      // Add key details
+      const categoryText = document.createElement('p');
+      categoryText.innerHTML = `<strong>Category:</strong> ${game.category} (${game.main_category})`;
+      
+      const tagsText = document.createElement('p');
+      tagsText.innerHTML = `<strong>Tags:</strong> ${game.tags || 'None'}`;
+      
+      const dimensionsText = document.createElement('p');
+      dimensionsText.innerHTML = `<strong>Dimensions:</strong> ${game.width || 'N/A'} × ${game.height || 'N/A'}`;
+      
+      const featuredText = document.createElement('p');
+      featuredText.innerHTML = `<strong>Featured:</strong> ${game.is_featured ? 'Yes' : 'No'}`;
+      
+      // Append all details
+      gameDetails.appendChild(categoryText);
+      gameDetails.appendChild(tagsText);
+      gameDetails.appendChild(dimensionsText);
+      gameDetails.appendChild(featuredText);
+      
+      gameInfo.appendChild(gameDetails);
+      
+      // Append all elements to the game item
+      gameItem.appendChild(gameTitle);
+      gameItem.appendChild(gameInfo);
+      
+      modalGameList.appendChild(gameItem);
+    });
+    
+    // Show total count
+    const totalCount = document.createElement('div');
+    totalCount.className = 'modal-total-count';
+    totalCount.textContent = `Total Games: ${processedGames.length}`;
+    modalGameList.appendChild(totalCount);
+    
+    // Show the modal
+    confirmationModal.style.display = 'block';
+  }
+  
+  // Close the modal
+  function closeModal() {
+    confirmationModal.style.display = 'none';
+  }
+  
+  // Handle final submission of all games
+  async function handleSubmitAll() {
+    try {
+      if (processedGames.length === 0) {
+        updateStatus('No games to upload', 'error');
+        return;
+      }
+      
+      // Close the modal
+      closeModal();
+      
+      // Start the upload process
+      await importGamesToSupabase(processedGames, providerSelect.value);
+      
+      // Clear the review section after successful upload
+      gamePreviewContainer.classList.add('hidden');
+      processedGames = [];
+      
+    } catch (error) {
+      console.error('Submit error:', error);
       updateStatus(`Error: ${error.message}`, 'error');
     }
   }
@@ -124,62 +566,101 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Process GameMonitize data
   function processGamemonitizeData(data, mainCategory) {
-    // GameMonitize data is directly an array of games
-    return data.map(game => ({
-      provider_game_id: game.id,
-      title: game.title,
-      description: game.description,
-      instructions: game.instructions,
-      slug: generateSlug(game.title),
-      category: game.category,
-      main_category: mainCategory, // Using selected main category
-      tags: game.tags,
-      orientation: determineOrientation(game.width, game.height),
-      quality_score: null, // Not available in GameMonitize
-      width: game.width,
-      height: game.height,
-      date_modified: null, // Not available in standard format
-      date_published: null, // Not available in standard format
-      banner_image: null, // Not available directly
-      thumbnail_image: game.thumb,
-      play_url: game.url,
-      provider: 'gamemonitize',
-      play_count: 0,
-      is_featured: false,
-      is_new: true
-    }));
+    if (!Array.isArray(data)) {
+      console.error('GameMonitize data is not in expected format');
+      return [];
+    }
+
+    return data.map(game => {
+      // Check if game should be featured based on tags or other criteria
+      const isFeatured = shouldBeGamemonitizeFeatured(game);
+      
+      // For banner games category (but don't create a separate field for it)
+      const isBanner = mainCategory === 'Banner Games';
+
+      // Create properly processed game object
+      return {
+        provider_game_id: game.id,
+        title: game.title,
+        description: game.description ? game.description.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>') : '',
+        instructions: game.instructions || '',
+        slug: generateSlug(game.title),
+        category: game.category || 'Uncategorized',
+        main_category: isFeatured ? 'Featured Games' : (isBanner ? 'Banner Games' : mainCategory),
+        tags: game.tags || '',
+        orientation: determineOrientation(game.width, game.height),
+        quality_score: null,
+        width: game.width || '800',
+        height: game.height || '600',
+        date_modified: null,
+        date_published: null,
+        banner_image: null,
+        thumbnail_image: game.thumb || '',
+        play_url: game.url || '',
+        provider: 'gamemonitize',
+        play_count: 0,
+        is_featured: isFeatured,
+        is_new: true
+      };
+    });
+  }
+
+  // Helper function to determine if a GameMonitize game should be featured
+  function shouldBeGamemonitizeFeatured(game) {
+    if (!game || !game.tags) return false;
+    
+    // Define criteria for featuring GameMonitize games
+    const featuredTags = ['Best Games', 'Best', 'Top Games', 'Popular'];
+    const gameTags = game.tags.toLowerCase();
+    
+    // Check if any featured tags are present
+    return featuredTags.some(tag => gameTags.includes(tag.toLowerCase()));
   }
 
   // Process GamePix data
   function processGamepixData(data, mainCategory) {
-    // GamePix data is in items property
     if (!data.items || !Array.isArray(data.items)) {
       return [];
     }
 
-    return data.items.map(game => ({
-      provider_game_id: game.id,
-      title: game.title,
-      description: game.description,
-      instructions: '', // Not available in GamePix sample
-      slug: game.namespace || generateSlug(game.title),
-      category: game.category,
-      main_category: mainCategory, // Using selected main category
-      tags: '', // Not available in the sample
-      orientation: game.orientation,
-      quality_score: game.quality_score,
-      width: game.width,
-      height: game.height,
-      date_modified: game.date_modified ? new Date(game.date_modified).toISOString() : null,
-      date_published: game.date_published ? new Date(game.date_published).toISOString() : null,
-      banner_image: game.banner_image,
-      thumbnail_image: game.image,
-      play_url: game.url,
-      provider: 'gamepix',
-      play_count: 0,
-      is_featured: false,
-      is_new: true
-    }));
+    return data.items.map(game => {
+      // Check if game should be featured based on quality score
+      const isFeatured = shouldBeGamepixFeatured(game);
+      
+      // For banner games category
+      const isBanner = mainCategory === 'Banner Games';
+      
+      return {
+        provider_game_id: game.id,
+        title: game.title,
+        description: game.description || '',
+        instructions: '', // Not available in GamePix sample
+        slug: game.namespace || generateSlug(game.title),
+        category: game.category || 'Uncategorized',
+        main_category: isFeatured ? 'Featured Games' : (isBanner ? 'Banner Games' : mainCategory),
+        tags: '', // Not available in the sample
+        orientation: game.orientation || determineOrientation(game.width, game.height),
+        quality_score: game.quality_score,
+        width: game.width || '800',
+        height: game.height || '600',
+        date_modified: game.date_modified ? new Date(game.date_modified).toISOString() : null,
+        date_published: game.date_published ? new Date(game.date_published).toISOString() : null,
+        banner_image: game.banner_image || null,
+        thumbnail_image: game.image || '',
+        play_url: game.url || '',
+        provider: 'gamepix',
+        play_count: 0,
+        is_featured: isFeatured,
+        is_new: true
+      };
+    });
+  }
+
+  // Helper function to determine if a GamePix game should be featured
+  function shouldBeGamepixFeatured(game) {
+    // Define criteria for featuring GamePix games
+    const QUALITY_SCORE_THRESHOLD = 0.85; // Games with quality score above 85% are featured
+    return game.quality_score >= QUALITY_SCORE_THRESHOLD;
   }
 
   // Import games to Supabase
@@ -193,13 +674,20 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < games.length; i++) {
       const game = games[i];
       try {
+        // Deep copy the game object and remove any fields that might not be in the database schema
+        const gameData = prepareGameData(game);
+        
         // Check if game already exists
-        const { data: existingGames } = await supabaseClient
+        const { data: existingGames, error: queryError } = await supabaseClient
           .from('games')
           .select('id')
           .eq('provider', provider)
-          .eq('provider_game_id', game.provider_game_id)
+          .eq('provider_game_id', gameData.provider_game_id)
           .limit(1);
+        
+        if (queryError) {
+          throw new Error(`Database query error: ${queryError.message}`);
+        }
         
         let result;
         let message;
@@ -208,7 +696,7 @@ document.addEventListener('DOMContentLoaded', () => {
           // Update existing game
           result = await supabaseClient
             .from('games')
-            .update(game)
+            .update(gameData)
             .eq('id', existingGames[0].id);
             
           message = 'Updated existing game';
@@ -216,52 +704,85 @@ document.addEventListener('DOMContentLoaded', () => {
           // Insert new game
           result = await supabaseClient
             .from('games')
-            .insert(game);
+            .insert(gameData);
             
           message = 'Inserted new game';
         }
         
         if (result.error) {
-          throw new Error(result.error.message);
+          // Provide more detailed error message
+          const errorMsg = result.error.message;
+          const detailedError = result.error.details ? `: ${result.error.details}` : '';
+          throw new Error(`${errorMsg}${detailedError}`);
         }
         
-        addResultRow(true, game.title, provider, message);
+        // Add to results table
+        addResultRow(true, gameData.title, provider, message);
         successful++;
       } catch (error) {
-        console.error(`Error importing game ${game.title}:`, error);
+        console.error('Error importing game:', error);
         addResultRow(false, game.title, provider, error.message);
         failed++;
       }
       
       // Update progress
-      const progress = ((i + 1) / total) * 100;
+      const progress = Math.round(((i + 1) / total) * 100);
       updateProgressBar(progress);
-      updateStatus(`Processed ${i + 1} of ${total} games. Success: ${successful}, Failed: ${failed}`, 'info');
     }
     
-    updateStatus(`Import completed. Successful: ${successful}, Failed: ${failed}`, successful === total ? 'success' : 'info');
+    // Update final status
+    if (failed === 0) {
+      updateStatus(`Successfully imported ${successful} games`, 'success');
+    } else {
+      updateStatus(`Imported ${successful} games, failed ${failed} games`, 'info');
+    }
+  }
+  
+  // Prepare game data for database insertion by removing any fields that might not match the schema
+  function prepareGameData(game) {
+    // Create a deep copy to avoid modifying the original object
+    const gameData = JSON.parse(JSON.stringify(game));
+    
+    // List of known valid fields in our database schema
+    const validFields = [
+      'provider_game_id', 'title', 'description', 'instructions', 'slug',
+      'category', 'main_category', 'tags', 'orientation', 'quality_score',
+      'width', 'height', 'date_modified', 'date_published', 'banner_image',
+      'thumbnail_image', 'play_url', 'provider', 'play_count', 'is_featured', 'is_new'
+    ];
+    
+    // Create a new object with only the valid fields
+    const cleanedData = {};
+    validFields.forEach(field => {
+      if (gameData[field] !== undefined) {
+        cleanedData[field] = gameData[field];
+      }
+    });
+    
+    return cleanedData;
   }
 
-  // Helper function to generate slug
+  // Generate URL-friendly slug from game title
   function generateSlug(title) {
     return title
       .toLowerCase()
-      .replace(/[^\w ]+/g, '')
-      .replace(/ +/g, '-');
+      .replace(/[^\w\s-]/g, '') // Remove non-word chars
+      .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
   }
 
-  // Helper function to determine orientation
+  // Determine game orientation from dimensions
   function determineOrientation(width, height) {
     if (!width || !height) return 'landscape';
     return parseInt(width) >= parseInt(height) ? 'landscape' : 'portrait';
   }
 
-  // Add a row to results table
+  // Add a result row to the results table
   function addResultRow(success, title, provider, message) {
     const row = document.createElement('tr');
     
     const statusCell = document.createElement('td');
-    statusCell.textContent = success ? 'Success' : 'Error';
+    statusCell.textContent = success ? 'Success' : 'Failed';
     statusCell.className = success ? 'success' : 'error';
     
     const titleCell = document.createElement('td');
@@ -289,20 +810,123 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update status message
   function updateStatus(message, type) {
     statusMessage.textContent = message;
-    statusMessage.className = 'status-message ' + type;
+    statusMessage.className = `status-message ${type}`;
   }
 
-  // Reset results
+  // Reset results UI
   function resetResults() {
     resultsBody.innerHTML = '';
-    progressBar.style.width = '0%';
+    progressBar.style.width = '0';
     statusMessage.textContent = '';
     statusMessage.className = 'status-message';
   }
 
-  // Clear form
+  // Clear form fields
   function clearForm() {
     jsonFileInput.value = '';
+    resetResults();
+    processedGames = [];
+    gamePreviewContainer.classList.add('hidden');
+    
+    // Only clear credentials if not saving them
+    if (!saveCredentialsCheckbox.checked) {
+      supabaseUrlInput.value = '';
+      supabaseKeyInput.value = '';
+    }
+  }
+
+  // --- Manual Entry Functions ---
+
+  function getManualGameData() {
+    return {
+        provider_game_id: document.getElementById('manual_provider_game_id').value,
+        title: document.getElementById('manual_title').value,
+        description: document.getElementById('manual_description').value,
+        instructions: document.getElementById('manual_instructions').value,
+        slug: generateSlug(document.getElementById('manual_title').value),
+        category: document.getElementById('manual_category').value,
+        main_category: document.getElementById('manual_main_category').value,
+        tags: document.getElementById('manual_tags').value,
+        orientation: determineOrientation(document.getElementById('manual_width').value, document.getElementById('manual_height').value),
+        quality_score: null, // Not available in manual entry
+        width: document.getElementById('manual_width').value,
+        height: document.getElementById('manual_height').value,
+        date_modified: new Date().toISOString(),
+        date_published: new Date().toISOString(),
+        banner_image: null, // Not available in manual entry
+        thumbnail_image: document.getElementById('manual_thumbnail_image').value,
+        play_url: document.getElementById('manual_play_url').value,
+        provider: document.getElementById('manual_provider').value,
+        play_count: 0,
+        is_featured: document.getElementById('manual_is_featured').checked,
+        is_new: true
+    };
+  }
+
+  function validateManualInputs(game) {
+    if (!game.title || !game.play_url || !game.provider_game_id) {
+      updateStatus('Title, Play URL, and Provider Game ID are required for manual entry.', 'error');
+      return false;
+    }
+    if (!supabaseUrlInput.value || !supabaseKeyInput.value) {
+      updateStatus('Supabase URL and API key are required', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  async function handleManualStore() {
+    const game = getManualGameData();
+
+    if (!validateManualInputs(game)) {
+      return;
+    }
+
+    manualStoreBtn.disabled = true;
+    manualStoreBtn.textContent = 'Storing...';
+
+    saveCredentials();
+    initSupabase();
+
+    updateStatus('Storing game...', 'info');
+    resetResults();
+
+    try {
+        await importGamesToSupabase([game], game.provider);
+    } catch (error) {
+        updateStatus(`An unexpected error occurred: ${error.message}`, 'error');
+    } finally {
+        manualStoreBtn.disabled = false;
+        manualStoreBtn.textContent = 'Store';
+    }
+  }
+
+  function handleManualPreview() {
+    const game = getManualGameData();
+
+    if (!game.title || !game.play_url) {
+        updateStatus('Title and Play URL are required for a preview.', 'error');
+        return;
+    }
+
+    localStorage.setItem('manualGamePreview', JSON.stringify(game));
+    window.open('preview.html', '_blank');
+  }
+
+  function clearManualForm() {
+    document.getElementById('manual_title').value = '';
+    document.getElementById('manual_description').value = '';
+    document.getElementById('manual_instructions').value = '';
+    document.getElementById('manual_play_url').value = '';
+    document.getElementById('manual_category').value = '';
+    document.getElementById('manual_main_category').value = 'New Releases';
+    document.getElementById('manual_tags').value = '';
+    document.getElementById('manual_width').value = '800';
+    document.getElementById('manual_height').value = '600';
+    document.getElementById('manual_thumbnail_image').value = '';
+    document.getElementById('manual_provider').value = 'manual';
+    document.getElementById('manual_provider_game_id').value = '';
+    document.getElementById('manual_is_featured').checked = false;
     resetResults();
   }
 });
