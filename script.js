@@ -29,22 +29,42 @@ document.addEventListener('DOMContentLoaded', () => {
   const manualPreviewBtn = document.getElementById('manualPreviewBtn');
   const manualClearBtn = document.getElementById('manualClearBtn');
 
+  // Pagination elements
+  const prevPageBtn = document.getElementById('prevPageBtn');
+  const nextPageBtn = document.getElementById('nextPageBtn');
+  const pageInfo = document.getElementById('pageInfo');
+  const pageSizeSelect = document.getElementById('pageSize');
+  const gamesCounter = document.getElementById('gamesCounter');
+  const prevPageBtnBottom = document.getElementById('prevPageBtnBottom'); // Added bottom pagination
+  const nextPageBtnBottom = document.getElementById('nextPageBtnBottom'); // Added bottom pagination
+  const pageInfoBottom = document.getElementById('pageInfoBottom'); // Added bottom pagination
+
+  // Duplicate Games Modal elements
+  const duplicateModal = document.getElementById('duplicateModal');
+  const duplicateGameList = document.getElementById('duplicateGameList');
+  const removeAllDuplicatesBtn = document.getElementById('removeAllDuplicatesBtn');
+  const closeDuplicateModalBtn = document.getElementById('closeDuplicateModalBtn');
+  const closeDuplicateModalBtnTop = document.querySelector('.close-duplicate'); // Close button in modal header
+  const checkDuplicatesBtn = document.getElementById('checkDuplicatesBtn'); // New button
+
   // Static main categories
-  const mainCategories = [
-    "New Releases",
-    "Trending Now",
-    "Most Played",
-    "Featured Games",
-    "Exclusive Titles",
-    "Banner Games",
-    "More Action"
-  ];
+const mainCategories = [
+  "New Releases",
+  "Trending Now",
+  "Most Played",
+  "Featured Games",
+  "Banner Games",
+  "Editor's Choice", 
+  "All Action Games" 
+];
 
   // Initialize Supabase client
   let supabaseClient = null;
   
   // Store processed games
   let processedGames = [];
+  let currentPage = 1;
+  let gamesPerPage = parseInt(pageSizeSelect.value); // Initial games per page
 
   // Load saved Supabase credentials if they exist
   loadSavedCredentials();
@@ -61,11 +81,27 @@ document.addEventListener('DOMContentLoaded', () => {
   manualStoreBtn.addEventListener('click', handleManualStore);
   manualPreviewBtn.addEventListener('click', handleManualPreview);
   manualClearBtn.addEventListener('click', clearManualForm);
+
+  // Pagination event listeners
+  prevPageBtn.addEventListener('click', () => changePage(-1));
+  nextPageBtn.addEventListener('click', () => changePage(1));
+  pageSizeSelect.addEventListener('change', changePageSize);
+  prevPageBtnBottom.addEventListener('click', () => changePage(-1)); // Added bottom pagination
+  nextPageBtnBottom.addEventListener('click', () => changePage(1)); // Added bottom pagination
+
+  // Duplicate Games event listeners
+  checkDuplicatesBtn.addEventListener('click', checkDuplicateGames);
+  removeAllDuplicatesBtn.addEventListener('click', removeAllDuplicateGames);
+  closeDuplicateModalBtn.addEventListener('click', closeDuplicateModal);
+  closeDuplicateModalBtnTop.addEventListener('click', closeDuplicateModal); // Close button in modal header
   
   // Close modal if user clicks outside of it
   window.addEventListener('click', (event) => {
     if (event.target === confirmationModal) {
       closeModal();
+    }
+    if (event.target === duplicateModal) { // Close duplicate modal
+      closeDuplicateModal();
     }
   });
 
@@ -156,9 +192,10 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Store processed games
       processedGames = games;
+      currentPage = 1; // Reset to first page
       
-      // Display games for review
-      displayGamesForReview(games);
+      // Display games for review with pagination
+      renderGamesList();
       
     } catch (error) {
       console.error('Import error:', error);
@@ -166,19 +203,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   
-  // Display games for review in the UI
-  function displayGamesForReview(games) {
-    // Clear any existing games
-    gamesList.innerHTML = '';
+  // --- Pagination Functions ---
+  function renderGamesList() {
+    gamesList.innerHTML = ''; // Clear any existing games
+    gamePreviewContainer.classList.remove('hidden'); // Show the game preview container
+
+    const totalGames = processedGames.length;
+    const totalPages = Math.ceil(totalGames / gamesPerPage);
     
-    // Show the game preview container
-    gamePreviewContainer.classList.remove('hidden');
+    // Update games counter
+    gamesCounter.textContent = `${totalGames} games loaded`;
+
+    // Calculate start and end index for current page
+    const startIndex = (currentPage - 1) * gamesPerPage;
+    const endIndex = Math.min(startIndex + gamesPerPage, totalGames);
     
-    // Create a card for each game
-    games.forEach((game, index) => {
+    const gamesToDisplay = processedGames.slice(startIndex, endIndex);
+
+    if (gamesToDisplay.length === 0 && totalGames > 0) {
+        // If no games on current page but total games exist, go to previous page
+        currentPage = Math.max(1, currentPage - 1);
+        renderGamesList();
+        return;
+    }
+
+    gamesToDisplay.forEach((game, index) => {
+      // Adjust index to reflect its original position in processedGames
+      const originalIndex = startIndex + index;
       const gameCard = document.createElement('div');
       gameCard.className = 'game-item';
-      gameCard.dataset.index = index;
+      gameCard.dataset.index = originalIndex; // Store original index
       
       // Create the iframe container
       const iframeContainer = document.createElement('div');
@@ -207,7 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       titleInput.className = 'game-title-input';
       titleInput.value = game.title;
       titleInput.dataset.field = 'title';
-      titleInput.addEventListener('change', (e) => updateGameData(index, 'title', e.target.value));
+      titleInput.addEventListener('change', (e) => updateGameData(originalIndex, 'title', e.target.value));
       
       // Create editable description
       const descriptionLabel = document.createElement('label');
@@ -219,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
       descriptionTextarea.value = game.description;
       descriptionTextarea.rows = 4;
       descriptionTextarea.dataset.field = 'description';
-      descriptionTextarea.addEventListener('change', (e) => updateGameData(index, 'description', e.target.value));
+      descriptionTextarea.addEventListener('change', (e) => updateGameData(originalIndex, 'description', e.target.value));
 
       // Create editable instructions
       const instructionsLabel = document.createElement('label');
@@ -231,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
       instructionsTextarea.value = game.instructions || '';
       instructionsTextarea.rows = 3;
       instructionsTextarea.dataset.field = 'instructions';
-      instructionsTextarea.addEventListener('change', (e) => updateGameData(index, 'instructions', e.target.value));
+      instructionsTextarea.addEventListener('change', (e) => updateGameData(originalIndex, 'instructions', e.target.value));
       
       // Create additional details section
       const additionalDetails = document.createElement('div');
@@ -247,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
       categoryInput.className = 'detail-input';
       categoryInput.value = game.category;
       categoryInput.dataset.field = 'category';
-      categoryInput.addEventListener('change', (e) => updateGameData(index, 'category', e.target.value));
+      categoryInput.addEventListener('change', (e) => updateGameData(originalIndex, 'category', e.target.value));
       
       // Add main category select
       const mainCategoryLabel = document.createElement('label');
@@ -267,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mainCategorySelect.appendChild(option);
       });
       
-      mainCategorySelect.addEventListener('change', (e) => updateGameData(index, 'main_category', e.target.value));
+      mainCategorySelect.addEventListener('change', (e) => updateGameData(originalIndex, 'main_category', e.target.value));
       
       // Add tags input
       const tagsLabel = document.createElement('label');
@@ -279,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
       tagsInput.className = 'detail-input';
       tagsInput.value = game.tags || '';
       tagsInput.dataset.field = 'tags';
-      tagsInput.addEventListener('change', (e) => updateGameData(index, 'tags', e.target.value));
+      tagsInput.addEventListener('change', (e) => updateGameData(originalIndex, 'tags', e.target.value));
       
       // Add dimensions input
       const dimensionsContainer = document.createElement('div');
@@ -294,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
       widthInput.className = 'detail-input-small';
       widthInput.value = game.width || '';
       widthInput.dataset.field = 'width';
-      widthInput.addEventListener('change', (e) => updateGameData(index, 'width', e.target.value));
+      widthInput.addEventListener('change', (e) => updateGameData(originalIndex, 'width', e.target.value));
       
       const heightLabel = document.createElement('label');
       heightLabel.textContent = 'Height:';
@@ -305,7 +359,7 @@ document.addEventListener('DOMContentLoaded', () => {
       heightInput.className = 'detail-input-small';
       heightInput.value = game.height || '';
       heightInput.dataset.field = 'height';
-      heightInput.addEventListener('change', (e) => updateGameData(index, 'height', e.target.value));
+      heightInput.addEventListener('change', (e) => updateGameData(originalIndex, 'height', e.target.value));
       
       dimensionsContainer.appendChild(widthLabel);
       dimensionsContainer.appendChild(widthInput);
@@ -325,7 +379,7 @@ document.addEventListener('DOMContentLoaded', () => {
       featuredCheckbox.className = 'detail-checkbox';
       featuredCheckbox.checked = game.is_featured || false;
       featuredCheckbox.dataset.field = 'is_featured';
-      featuredCheckbox.addEventListener('change', (e) => updateGameData(index, 'is_featured', e.target.checked));
+      featuredCheckbox.addEventListener('change', (e) => updateGameData(originalIndex, 'is_featured', e.target.checked));
       
       featuredContainer.appendChild(featuredLabel);
       featuredContainer.appendChild(featuredCheckbox);
@@ -341,7 +395,7 @@ document.addEventListener('DOMContentLoaded', () => {
       urlInput.value = game.play_url || '';
       urlInput.dataset.field = 'play_url';
       urlInput.addEventListener('change', (e) => {
-        updateGameData(index, 'play_url', e.target.value);
+        updateGameData(originalIndex, 'play_url', e.target.value);
         // Update iframe src
         iframe.src = e.target.value;
       });
@@ -356,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
       thumbnailInput.className = 'detail-input';
       thumbnailInput.value = game.thumbnail_image || '';
       thumbnailInput.dataset.field = 'thumbnail_image';
-      thumbnailInput.addEventListener('change', (e) => updateGameData(index, 'thumbnail_image', e.target.value));
+      thumbnailInput.addEventListener('change', (e) => updateGameData(originalIndex, 'thumbnail_image', e.target.value));
       
       // Add actions section
       const actions = document.createElement('div');
@@ -366,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const removeBtn = document.createElement('button');
       removeBtn.className = 'remove-game-btn';
       removeBtn.textContent = 'Remove Game';
-      removeBtn.addEventListener('click', () => removeGame(index));
+      removeBtn.addEventListener('click', () => removeGame(originalIndex));
       
       // Append all elements
       additionalDetails.appendChild(categoryLabel);
@@ -398,6 +452,47 @@ document.addEventListener('DOMContentLoaded', () => {
       // Add to the games list
       gamesList.appendChild(gameCard);
     });
+
+    updatePaginationControls(totalPages);
+  }
+
+  function updatePaginationControls(totalPages) {
+    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    pageInfoBottom.textContent = `Page ${currentPage} of ${totalPages}`; // Update bottom pagination
+
+    prevPageBtn.disabled = currentPage === 1;
+    prevPageBtnBottom.disabled = currentPage === 1; // Update bottom pagination
+
+    nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
+    nextPageBtnBottom.disabled = currentPage === totalPages || totalPages === 0; // Update bottom pagination
+
+    // Show/hide pagination controls if there's only one page
+    const paginationContainers = document.querySelectorAll('.pagination-controls');
+    paginationContainers.forEach(container => {
+        if (totalPages <= 1) {
+            container.classList.add('hidden');
+        } else {
+            container.classList.remove('hidden');
+        }
+    });
+  }
+
+  function changePage(direction) {
+    const totalPages = Math.ceil(processedGames.length / gamesPerPage);
+    currentPage += direction;
+
+    if (currentPage < 1) {
+      currentPage = 1;
+    } else if (currentPage > totalPages) {
+      currentPage = totalPages;
+    }
+    renderGamesList();
+  }
+
+  function changePageSize() {
+    gamesPerPage = parseInt(pageSizeSelect.value);
+    currentPage = 1; // Reset to first page when page size changes
+    renderGamesList();
   }
   
   // Update game data in memory
@@ -413,8 +508,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Remove from data array
       processedGames.splice(index, 1);
       
-      // Redisplay games
-      displayGamesForReview(processedGames);
+      // Redisplay games with pagination
+      renderGamesList();
     }
   }
   
@@ -574,9 +669,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return data.map(game => {
       // Check if game should be featured based on tags or other criteria
       const isFeatured = shouldBeGamemonitizeFeatured(game);
-      
-      // For banner games category (but don't create a separate field for it)
-      const isBanner = mainCategory === 'Banner Games';
 
       // Create properly processed game object
       return {
@@ -586,7 +678,7 @@ document.addEventListener('DOMContentLoaded', () => {
         instructions: game.instructions || '',
         slug: generateSlug(game.title),
         category: game.category || 'Uncategorized',
-        main_category: isFeatured ? 'Featured Games' : (isBanner ? 'Banner Games' : mainCategory),
+        main_category: mainCategory, // <-- FIX: Always use the selected main category
         tags: game.tags || '',
         orientation: determineOrientation(game.width, game.height),
         quality_score: null,
@@ -599,7 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
         play_url: game.url || '',
         provider: 'gamemonitize',
         play_count: 0,
-        is_featured: isFeatured,
+        is_featured: isFeatured, // Set the is_featured flag separately
         is_new: true
       };
     });
@@ -627,9 +719,6 @@ document.addEventListener('DOMContentLoaded', () => {
       // Check if game should be featured based on quality score
       const isFeatured = shouldBeGamepixFeatured(game);
       
-      // For banner games category
-      const isBanner = mainCategory === 'Banner Games';
-      
       return {
         provider_game_id: game.id,
         title: game.title,
@@ -637,7 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
         instructions: '', // Not available in GamePix sample
         slug: game.namespace || generateSlug(game.title),
         category: game.category || 'Uncategorized',
-        main_category: isFeatured ? 'Featured Games' : (isBanner ? 'Banner Games' : mainCategory),
+        main_category: mainCategory, // <-- FIX: Always use the selected main category
         tags: '', // Not available in the sample
         orientation: game.orientation || determineOrientation(game.width, game.height),
         quality_score: game.quality_score,
@@ -650,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         play_url: game.url || '',
         provider: 'gamepix',
         play_count: 0,
-        is_featured: isFeatured,
+        is_featured: isFeatured, // Set the is_featured flag separately
         is_new: true
       };
     });
@@ -827,6 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resetResults();
     processedGames = [];
     gamePreviewContainer.classList.add('hidden');
+    currentPage = 1; // Reset pagination
     
     // Only clear credentials if not saving them
     if (!saveCredentialsCheckbox.checked) {
@@ -929,4 +1019,153 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('manual_is_featured').checked = false;
     resetResults();
   }
+
+  // --- Duplicate Games Functions ---
+  async function checkDuplicateGames() {
+    if (processedGames.length === 0) {
+      updateStatus('No games to check for duplicates.', 'error');
+      return;
+    }
+
+    updateStatus('Checking for duplicate games...', 'info');
+    initSupabase(); // Ensure Supabase client is initialized
+
+    const duplicateFound = [];
+
+    for (const game of processedGames) {
+      try {
+        const { data: existingGames, error } = await supabaseClient
+          .from('games')
+          .select('id, title, provider, provider_game_id')
+          .or(`provider_game_id.eq.${game.provider_game_id},title.eq.${game.title}`)
+          .limit(1);
+
+        if (error) {
+          throw new Error(`Supabase query error: ${error.message}`);
+        }
+
+        if (existingGames && existingGames.length > 0) {
+          duplicateFound.push({
+            localGame: game,
+            existingGame: existingGames[0]
+          });
+        }
+      } catch (err) {
+        console.error('Error checking for duplicate:', err);
+        updateStatus(`Error checking duplicates: ${err.message}`, 'error');
+        return;
+      }
+    }
+
+    if (duplicateFound.length > 0) {
+      displayDuplicateModal(duplicateFound);
+      updateStatus(`${duplicateFound.length} duplicate(s) found.`, 'warning');
+    } else {
+      updateStatus('No duplicate games found.', 'success');
+    }
+  }
+
+  function displayDuplicateModal(duplicates) {
+    duplicateGameList.innerHTML = ''; // Clear previous duplicates
+
+    duplicates.forEach((dup, index) => {
+      const dupItem = document.createElement('div');
+      dupItem.className = 'duplicate-game-item';
+      dupItem.dataset.index = index; // Store index for removal
+
+      const title = document.createElement('h3');
+      title.textContent = dup.localGame.title;
+
+      const details = document.createElement('p');
+      details.innerHTML = `<strong>Provider:</strong> ${dup.localGame.provider}<br>
+                           <strong>Provider Game ID:</strong> ${dup.localGame.provider_game_id}<br>
+                           <strong>Existing Supabase ID:</strong> ${dup.existingGame.id}<br>
+                           <strong>Existing Supabase Title:</strong> ${dup.existingGame.title}`;
+      
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-duplicate-btn';
+      removeBtn.textContent = 'Remove This Duplicate';
+      removeBtn.addEventListener('click', () => removeSingleDuplicate(index));
+
+      dupItem.appendChild(title);
+      dupItem.appendChild(details);
+      dupItem.appendChild(removeBtn);
+      duplicateGameList.appendChild(dupItem);
+    });
+
+    duplicateModal.style.display = 'block';
+  }
+
+  function removeSingleDuplicate(indexToRemove) {
+    // Remove the game from processedGames that corresponds to the duplicate entry
+    // This requires finding the original game in processedGames based on the duplicate info
+    const duplicateEntry = duplicateGameList.children[indexToRemove];
+    const localGameTitle = duplicateEntry.querySelector('h3').textContent;
+    const localGameProviderId = duplicateEntry.querySelector('p').innerHTML.split('<strong>Provider Game ID:</strong> ')[1].split('<br>')[0];
+
+    const originalIndexInProcessedGames = processedGames.findIndex(game => 
+        game.title === localGameTitle && game.provider_game_id === localGameProviderId
+    );
+
+    if (originalIndexInProcessedGames !== -1) {
+        processedGames.splice(originalIndexInProcessedGames, 1);
+        updateStatus(`Removed "${localGameTitle}" from upload list.`, 'info');
+    } else {
+        console.warn(`Could not find game to remove: ${localGameTitle}`);
+    }
+
+    // Re-render the duplicate modal with remaining duplicates
+    // Fetch current duplicates again to ensure consistency
+    const remainingDuplicates = [];
+    const currentDuplicateItems = duplicateGameList.children;
+    for (let i = 0; i < currentDuplicateItems.length; i++) {
+        if (i !== indexToRemove) {
+            // Reconstruct the duplicate object (simplified, could be improved with better data storage)
+            const title = currentDuplicateItems[i].querySelector('h3').textContent;
+            const providerId = currentDuplicateItems[i].querySelector('p').innerHTML.split('<strong>Provider Game ID:</strong> ')[1].split('<br>')[0];
+            const existingId = currentDuplicateItems[i].querySelector('p').innerHTML.split('<strong>Existing Supabase ID:</strong> ')[1].split('<br>')[0];
+            const existingTitle = currentDuplicateItems[i].querySelector('p').innerHTML.split('<strong>Existing Supabase Title:</strong> ')[1];
+
+            remainingDuplicates.push({
+                localGame: { title: title, provider_game_id: providerId },
+                existingGame: { id: existingId, title: existingTitle }
+            });
+        }
+    }
+    
+    if (remainingDuplicates.length > 0) {
+        displayDuplicateModal(remainingDuplicates);
+    } else {
+        closeDuplicateModal();
+        updateStatus('All duplicates removed from the upload list.', 'success');
+    }
+    renderGamesList(); // Re-render the main game list to reflect removal
+  }
+
+  function removeAllDuplicateGames() {
+    // Collect all provider_game_id and titles from the duplicate list
+    const duplicatesToRemove = [];
+    const duplicateItems = duplicateGameList.children;
+    for (let i = 0; i < duplicateItems.length; i++) {
+        const title = duplicateItems[i].querySelector('h3').textContent;
+        const providerId = duplicateItems[i].querySelector('p').innerHTML.split('<strong>Provider Game ID:</strong> ')[1].split('<br>')[0];
+        duplicatesToRemove.push({ title: title, provider_game_id: providerId });
+    }
+
+    // Filter out games from processedGames that are in the duplicatesToRemove list
+    processedGames = processedGames.filter(game => {
+        return !duplicatesToRemove.some(dup => 
+            dup.title === game.title && dup.provider_game_id === game.provider_game_id
+        );
+    });
+
+    updateStatus(`Removed ${duplicatesToRemove.length} duplicate games from the upload list.`, 'info');
+    closeDuplicateModal();
+    renderGamesList(); // Re-render the main game list to reflect removal
+  }
+
+  function closeDuplicateModal() {
+    duplicateModal.style.display = 'none';
+  }
+
 });
