@@ -1,225 +1,166 @@
-# Game Data Importer
+# Game Data Importer (v2)
 
-A tool to import game data from various providers into a Supabase database with review, editing, and confirmation capabilities.
+Tool to import HTML5 games from GameMonetize and GamePix into Supabase. Browser UI for visual review + edit. Node backend for the actual upserts.
 
-## Features
+## Why v2
 
-### 1. Game Categories
-- Supports multiple categories including: 
-  - New Releases
-  - Trending Now
-  - Most Played
-  - Featured Games 
-  - Exclusive Titles
-  - **Banner Games** (New!)
-  - More Action
+v1 ran entirely in the browser with the Supabase key pasted into an HTML input. That meant:
+- The key shipped to anyone who hit the page
+- A `service_role` key got committed to git history (now rotated)
+- 1000-game imports took 10+ minutes and crashed tabs
 
-### 2. Two-Step Import Process
-- **First Step**: Import and review games
-  - Upload game data files (JSON format)
-  - See all games in a visual grid
-  - Play games in embedded iframes
-  - Edit any game details
+v2 puts credentials on a local Node server. The browser never sees the key. Imports are batched + concurrent + resumable.
 
-- **Second Step**: Confirm and upload
-  - Review final list in confirmation modal
-  - Upload all games to Supabase database
+## Architecture
 
-### 3. Game Editing Features
-- Edit any game property:
-  - Title
-  - Description
-  - Instructions
-  - Category and Main Category
-  - Tags
-  - Dimensions (width/height)
-  - Media URLs
-  - Featured status
-- Remove unwanted games from the list
+```
+[Browser UI] ─────fetch + SSE─────> [Node server :5174] ──────> [Supabase REST]
+   index.html                          server/server.mjs            games table
+   script.js
+   styles.css
+```
 
-### 4. Dark Mode UI
-- Complete dark theme styling
-- High contrast for readability
-- Mobile responsive design
+The browser never touches Supabase directly. The Node server reads `server/.env` for credentials and proxies all DB operations.
 
-### 5. Credential Management
-- Save Supabase credentials locally
-- No need to re-enter URL and API key
-- Optional feature that can be toggled on/off
+## Setup
 
-## How to Use
+1. **Set credentials:**
+   ```bash
+   cd server
+   cp .env.example .env
+   # Edit .env with your Supabase URL + ANON key (not service_role!)
+   ```
 
-1. Select a game provider (GameMonitize or GamePix)
-2. Choose a main category for the imported games
-3. Select a JSON file to import
-4. Enter your Supabase credentials (or they'll be pre-filled if previously saved)
-5. Check "Remember credentials" to save your Supabase URL and key for next time
-6. Click "Import Data" to load games for review
-7. Edit any game details or remove unwanted games
-8. Click "Submit All" when ready
-9. Review the final list in the confirmation modal
-10. Click "Confirm Upload" to save to Supabase
+2. **Install + start the server:**
+   ```bash
+   cd server
+   npm install
+   npm start
+   ```
 
-## Technical Details
+3. **Open the UI:**
+   - http://localhost:5174/index.html
 
-- Built with vanilla JavaScript, HTML, and CSS
-- Uses the Supabase JavaScript client for database operations
-- Responsive design for all device sizes
-- Dark mode UI by default
+If you see "Server connected, Supabase configured ✓" at the top of the page, you're good.
 
-## File Formats
+## Usage
 
-### GameMonitize
-The application expects GameMonitize JSON files in the following format:
+1. Pick a provider (GameMonetize or GamePix).
+2. Pick a main category (Featured Games, New Releases, etc.).
+3. Choose a JSON file from a provider dump.
+4. Click **Import Data**. The server normalizes the file and returns the games for review.
+5. (Optional) **Filters**: set a min quality score or require a thumbnail URL, then click **Apply Filters** to trim the list.
+6. Edit any field on any game card. The play preview iframe is lazy-loaded — click "▶ Preview game" only when you want to test a specific game.
+7. (Optional) Click **Check Duplicates** to query Supabase and surface games that already exist.
+8. Click **Submit All** when ready. Confirmation modal appears.
+9. Click **Confirm Upload**. Progress streams live via Server-Sent Events.
+10. When done, if there are failures, click **Download failed games (JSON)** to get the offending records as a file you can fix and re-import.
+
+## What's new vs v1
+
+| Feature | v1 | v2 |
+|---|---|---|
+| Credentials | In HTML input, localStorage | Server-side `.env`, never in browser |
+| Import speed (1000 games) | ~10 min, sequential | ~30 sec, batched + 5 concurrent |
+| Resume after crash | None | Server checkpoint per import |
+| Failed games | Scroll the results table | One-click JSON download |
+| Duplicate query | Vulnerable string interpolation | Parameterized `.in()` per provider |
+| Entity decoding | Partial (`&amp;`, `&lt;`, `&gt;`) | Full (curly quotes, em/en dashes, `mdash`/`ndash` artifacts) |
+| Slug collisions | First-write wins | Appends `provider_game_id` |
+| `play_count` on update | Zeroed out (bug) | Preserved |
+| `is_new` flag | Always true | Derived from `date_published` (30-day window) for GamePix |
+| Iframe preview | 20 per page, eager | Lazy, click to load |
+| Filters | None | min quality, require thumbnail |
+
+## Supabase prerequisites
+
+The `games` table needs a unique index on `(provider, provider_game_id)` so the upsert can use it as the conflict key:
+
+```sql
+create unique index if not exists games_provider_game_id_idx
+  on games (provider, provider_game_id);
+```
+
+Required columns (same as v1):
+`id`, `provider`, `provider_game_id`, `title`, `description`, `instructions`, `slug`, `category`, `main_category`, `tags`, `orientation`, `quality_score`, `width`, `height`, `date_modified`, `date_published`, `banner_image`, `thumbnail_image`, `play_url`, `play_count`, `is_featured`, `is_new`, `created_at`, `updated_at`.
+
+## Provider formats
+
+### GameMonetize
+Array of objects. Each object:
 ```json
-[
-  {
-    "id": "12345",
-    "title": "Game Title",
-    "description": "Game description text",
-    "instructions": "How to play the game",
-    "url": "https://game-url.com",
-    "category": "Action",
-    "tags": "Tag1, Tag2, Tag3",
-    "thumb": "https://thumbnail-url.com",
-    "width": "800",
-    "height": "600"
-  },
-  ...
-]
+{
+  "id": "12345",
+  "title": "Game Title",
+  "description": "Game description text",
+  "instructions": "How to play",
+  "url": "https://html5.gamemonetize.com/.../",
+  "category": "Action",
+  "tags": "Tag1, Tag2",
+  "thumb": "https://...",
+  "width": "800",
+  "height": "600"
+}
 ```
 
 ### GamePix
-For GamePix, the expected format is:
 ```json
 {
   "items": [
     {
-      "id": "12345",
-      "title": "Game Title",
-      "description": "Game description",
-      "namespace": "game-slug",
-      "category": "Action",
+      "id": "ABC123",
+      "title": "...",
+      "namespace": "url-slug",
+      "description": "...",
+      "category": "action",
       "orientation": "landscape",
       "quality_score": 0.92,
       "width": 800,
       "height": 600,
-      "date_modified": "2023-01-01T00:00:00Z",
-      "date_published": "2023-01-01T00:00:00Z",
-      "banner_image": "https://banner-url.com",
-      "image": "https://image-url.com",
-      "url": "https://game-url.com"
-    },
-    ...
+      "date_modified": "...",
+      "date_published": "...",
+      "banner_image": "...",
+      "image": "...",
+      "url": "..."
+    }
   ]
 }
 ```
 
-## Prerequisites
+## Security notes
 
-- A Supabase project with a `games` table
-- The `games` table should have the following columns (at minimum):
-  - `id` (int8, primary key)
-  - `provider_game_id` (text)
-  - `title` (text)
-  - `description` (text)
-  - `instructions` (text)
-  - `slug` (text)
-  - `category` (text)
-  - `main_category` (text)
-  - `tags` (text)
-  - `orientation` (text)
-  - `quality_score` (float4)
-  - `width` (int4)
-  - `height` (int4)
-  - `date_modified` (timestamp)
-  - `date_published` (timestamp)
-  - `banner_image` (text)
-  - `thumbnail_image` (text)
-  - `play_url` (text)
-  - `provider` (text)
-  - `play_count` (int4)
-  - `is_featured` (bool)
-  - `is_new` (bool)
-  - `created_at` (timestamp)
-  - `updated_at` (timestamp)
+- **Never paste a `service_role` key.** Use the ANON key + Row Level Security on the `games` table. The ANON key alone, with the right RLS rules, is enough for inserts from an authenticated admin user.
+- The `.gitignore` in this folder excludes `server/.env`, `server/node_modules`, and `server/state/`. Keep them gitignored.
+- If you ever need to operate the server in a CI environment, supply env vars via the runner's secret store rather than committing `.env`.
 
-## Setup
+## Troubleshooting
 
-1. Clone this repository or download the files
-2. Open `index.html` in your web browser
-3. That's it! No server or build process is required
+- **"Server unreachable"**: Start the server: `cd server && npm start`. Confirm it logs `listening on http://localhost:5174`.
+- **"Supabase NOT configured"**: Edit `server/.env`. Restart the server.
+- **Import stalls at 0%**: Confirm the `(provider, provider_game_id)` unique index exists in Supabase. Without it, the upsert can't resolve conflicts and Supabase rejects the batch.
+- **Browser doesn't refresh after an import**: SSE connection may have dropped. Refresh the page. Active import keeps running on the server; you can re-subscribe by passing the same `importId` to `/api/import/:id/progress`.
+- **Want to resume a crashed import**: Look in `server/state/` for `import-*.json` files. Each file is a snapshot of one import session.
 
-## Usage
+## File layout
 
-1. Select the provider (GameMonitize or GamePix)
-2. Choose the JSON file to import
-3. Enter your Supabase URL and anon key
-4. Click "Import Data"
-5. Wait for the import to complete
-6. View the results in the table below
-
-## JSON File Format
-
-### GameMonitize
-
-GameMonitize JSON files should be an array of game objects with properties like:
-
-```json
-[
-  {
-    "id": "33591",
-    "title": "WhackAMole3D",
-    "description": "Game description...",
-    "instructions": "Mouse click or tap to play",
-    "url": "https://html5.gamemonetize.com/game-url/",
-    "category": "Action",
-    "tags": "1 Player, 3D, 3D Games",
-    "thumb": "https://img.gamemonetize.com/image.jpg",
-    "width": "800",
-    "height": "600"
-  },
-  // More games...
-]
 ```
-
-### GamePix
-
-GamePix JSON files should have an `items` array containing game objects:
-
-```json
-{
-  "items": [
-    {
-      "id": "36DO1",
-      "title": "Body Drop 3D",
-      "namespace": "body-drop-3d",
-      "description": "Game description...",
-      "category": "action",
-      "orientation": "landscape",
-      "quality_score": 0.90954648,
-      "width": 800,
-      "height": 600,
-      "date_modified": "Sun, 30 Mar 2025 00:10:33 GMT",
-      "date_published": "Wed, 06 Apr 2022 14:26:01 GMT",
-      "banner_image": "https://img.gamepix.com/banner.png",
-      "image": "https://img.gamepix.com/image.png",
-      "url": "https://play.gamepix.com/game-url"
-    },
-    // More games...
-  ]
-}
+import-games-script/
+├── .gitignore
+├── README.md
+├── index.html                  Browser UI
+├── script.js                   Frontend logic (calls /api/*)
+├── styles.css
+├── gamemonitize-*.json         Sample / source dumps
+├── gamepix-*.json
+├── server/
+│   ├── .env.example            Copy to .env
+│   ├── .env                    [gitignored] your real credentials
+│   ├── package.json
+│   ├── server.mjs              Hono server
+│   ├── lib/
+│   │   ├── normalize.mjs       Provider → row shape
+│   │   ├── duplicates.mjs      Safe dup check
+│   │   ├── importer.mjs        Batched upsert + concurrency
+│   │   └── checkpoint.mjs      Per-import state on disk
+│   └── state/                  [gitignored] import-*.json checkpoints
 ```
-
-## How It Works
-
-1. The importer reads the JSON file and validates its format
-2. It maps the provider-specific data to your Supabase schema
-3. For each game, it checks if the game already exists in the database
-4. If the game exists, it updates the existing record
-5. If the game doesn't exist, it inserts a new record
-6. It displays the progress and results of the import process
-
-## Support
-
-If you encounter any issues or have questions, please open an issue in this repository. 

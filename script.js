@@ -1,965 +1,570 @@
-document.addEventListener('DOMContentLoaded', () => {
-  // DOM elements
-  const providerSelect = document.getElementById('provider');
-  const mainCategorySelect = document.getElementById('mainCategory');
-  const jsonFileInput = document.getElementById('jsonFile');
-  const supabaseUrlInput = document.getElementById('supabaseUrl');
-  const supabaseKeyInput = document.getElementById('supabaseKey');
-  const saveCredentialsCheckbox = document.getElementById('saveCredentials');
-  const importBtn = document.getElementById('importBtn');
-  const clearBtn = document.getElementById('clearBtn');
-  const progressBar = document.getElementById('progressBar');
-  const statusMessage = document.getElementById('statusMessage');
-  const resultsBody = document.getElementById('resultsBody');
-  const gamePreviewContainer = document.getElementById('gamePreviewContainer');
-  const gamesList = document.getElementById('gamesList');
-  const submitAllBtn = document.getElementById('submitAllBtn');
-  const confirmationModal = document.getElementById('confirmationModal');
-  const modalGameList = document.getElementById('modalGameList');
-  const confirmUploadBtn = document.getElementById('confirmUploadBtn');
-  const cancelUploadBtn = document.getElementById('cancelUploadBtn');
-  const closeModalBtn = document.querySelector('.close');
+/* import-games-script — frontend (v2.1)
+ *
+ * Talks to the Node backend on localhost:5174. Never touches Supabase
+ * directly. Server credentials live in server/.env.
+ *
+ * Run: cd server && npm install && npm start
+ * Open: http://localhost:5174/index.html
+ */
 
-  // New manual entry form elements
-  const jsonModeRadio = document.getElementById('jsonMode');
-  const manualModeRadio = document.getElementById('manualMode');
-  const jsonImportForm = document.getElementById('jsonImportForm');
-  const manualEntryForm = document.getElementById('manualEntryForm');
-  const manualStoreBtn = document.getElementById('manualStoreBtn');
-  const manualPreviewBtn = document.getElementById('manualPreviewBtn');
-  const manualClearBtn = document.getElementById('manualClearBtn');
+const API = (() => {
+  const sameOrigin = location.origin && !location.origin.startsWith("file");
+  return sameOrigin ? "" : "http://localhost:5174";
+})();
 
-  // Pagination elements
-  const prevPageBtn = document.getElementById('prevPageBtn');
-  const nextPageBtn = document.getElementById('nextPageBtn');
-  const pageInfo = document.getElementById('pageInfo');
-  const pageSizeSelect = document.getElementById('pageSize');
-  const gamesCounter = document.getElementById('gamesCounter');
-  const prevPageBtnBottom = document.getElementById('prevPageBtnBottom'); // Added bottom pagination
-  const nextPageBtnBottom = document.getElementById('nextPageBtnBottom'); // Added bottom pagination
-  const pageInfoBottom = document.getElementById('pageInfoBottom'); // Added bottom pagination
-
-  // Duplicate Games Modal elements
-  const duplicateModal = document.getElementById('duplicateModal');
-  const duplicateGameList = document.getElementById('duplicateGameList');
-  const removeAllDuplicatesBtn = document.getElementById('removeAllDuplicatesBtn');
-  const closeDuplicateModalBtn = document.getElementById('closeDuplicateModalBtn');
-  const closeDuplicateModalBtnTop = document.querySelector('.close-duplicate'); // Close button in modal header
-  const checkDuplicatesBtn = document.getElementById('checkDuplicatesBtn'); // New button
-
-  // Static main categories
-const mainCategories = [
+const MAIN_CATEGORIES = [
   "New Releases",
   "Trending Now",
   "Most Played",
   "Featured Games",
   "Banner Games",
-  "Editor's Choice", 
-  "All Action Games" 
+  "Editor's Choice",
+  "All Action Games",
 ];
 
-  // Initialize Supabase client
-  let supabaseClient = null;
-  
-  // Store processed games
+document.addEventListener("DOMContentLoaded", () => {
+  /* ---------- DOM (every reference uses ?. so missing nodes can't crash boot) ---------- */
+  const $ = (id) => document.getElementById(id);
+
+  const providerSelect = $("provider");
+  const mainCategorySelect = $("mainCategory"); /* legacy hidden select, may be absent */
+  const mainCategoryContainer = $("mainCategoryContainer");
+  const jsonFileInput = $("jsonFile");
+  const importBtn = $("importBtn");
+  const clearBtn = $("clearBtn");
+  const progressBar = $("progressBar");
+  const statusMessage = $("statusMessage");
+  const resultsBody = $("resultsBody");
+  const gamePreviewContainer = $("gamePreviewContainer");
+  const gamesList = $("gamesList");
+  const submitAllBtn = $("submitAllBtn");
+  const confirmationModal = $("confirmationModal");
+  const modalGameList = $("modalGameList");
+  const confirmUploadBtn = $("confirmUploadBtn");
+  const cancelUploadBtn = $("cancelUploadBtn");
+  const closeModalBtn = document.querySelector(".close");
+
+  const jsonModeRadio = $("jsonMode");
+  const manualModeRadio = $("manualMode");
+  const jsonImportForm = $("jsonImportForm");
+  const manualEntryForm = $("manualEntryForm");
+  const manualStoreBtn = $("manualStoreBtn");
+  const manualPreviewBtn = $("manualPreviewBtn");
+  const manualClearBtn = $("manualClearBtn");
+  const manualMainCategorySelect = $("manual_main_category");
+
+  const prevPageBtn = $("prevPageBtn");
+  const nextPageBtn = $("nextPageBtn");
+  const pageInfo = $("pageInfo");
+  const pageSizeSelect = $("pageSize");
+  const gamesCounter = $("gamesCounter");
+  const prevPageBtnBottom = $("prevPageBtnBottom");
+  const nextPageBtnBottom = $("nextPageBtnBottom");
+  const pageInfoBottom = $("pageInfoBottom");
+
+  const duplicateModal = $("duplicateModal");
+  const duplicateGameList = $("duplicateGameList");
+  const removeAllDuplicatesBtn = $("removeAllDuplicatesBtn");
+  const removeSelectedDuplicatesBtn = $("removeSelectedDuplicatesBtn");
+  const closeDuplicateModalBtn = $("closeDuplicateModalBtn");
+  const closeDuplicateModalBtnTop = document.querySelector(".close-duplicate");
+  const checkDuplicatesBtn = $("checkDuplicatesBtn");
+  const selectAllDuplicatesCheckbox = $("selectAllDuplicates");
+  const duplicateSelectionCount = $("duplicateSelectionCount");
+
+  const serverStatusEl = $("serverStatus");
+  const filterQualityInput = $("filterQuality");
+  const filterRequireThumb = $("filterRequireThumb");
+  const applyFiltersBtn = $("applyFiltersBtn");
+  const downloadFailedBtn = $("downloadFailedBtn");
+
+  /* ---------- state ---------- */
   let processedGames = [];
+  let unfilteredGames = [];
   let currentPage = 1;
-  let gamesPerPage = parseInt(pageSizeSelect.value); // Initial games per page
+  let gamesPerPage = parseInt(pageSizeSelect?.value || "10");
+  let activeImportId = null;
+  let activeEventSource = null;
+  let duplicatePairs = [];
+  let selectedMainCategory = MAIN_CATEGORIES[0];
 
-  // Load saved Supabase credentials if they exist
-  loadSavedCredentials();
+  /* ---------- boot ---------- */
+  populateCategorySelectors();
+  pingServer();
+  refreshProvidersList();
 
-  // Event listeners
-  importBtn.addEventListener('click', handleImport);
-  clearBtn.addEventListener('click', clearForm);
-  submitAllBtn.addEventListener('click', showConfirmationModal);
-  confirmUploadBtn.addEventListener('click', handleSubmitAll);
-  cancelUploadBtn.addEventListener('click', closeModal);
-  closeModalBtn.addEventListener('click', closeModal);
-  jsonModeRadio.addEventListener('change', toggleImportMode);
-  manualModeRadio.addEventListener('change', toggleImportMode);
-  manualStoreBtn.addEventListener('click', handleManualStore);
-  manualPreviewBtn.addEventListener('click', handleManualPreview);
-  manualClearBtn.addEventListener('click', clearManualForm);
+  importBtn?.addEventListener("click", handleImport);
+  clearBtn?.addEventListener("click", clearForm);
+  submitAllBtn?.addEventListener("click", showConfirmationModal);
+  confirmUploadBtn?.addEventListener("click", handleSubmitAll);
+  cancelUploadBtn?.addEventListener("click", closeModal);
+  closeModalBtn?.addEventListener("click", closeModal);
 
-  // Pagination event listeners
-  prevPageBtn.addEventListener('click', () => changePage(-1));
-  nextPageBtn.addEventListener('click', () => changePage(1));
-  pageSizeSelect.addEventListener('change', changePageSize);
-  prevPageBtnBottom.addEventListener('click', () => changePage(-1)); // Added bottom pagination
-  nextPageBtnBottom.addEventListener('click', () => changePage(1)); // Added bottom pagination
+  jsonModeRadio?.addEventListener("change", toggleImportMode);
+  manualModeRadio?.addEventListener("change", toggleImportMode);
+  manualStoreBtn?.addEventListener("click", handleManualStore);
+  manualPreviewBtn?.addEventListener("click", handleManualPreview);
+  manualClearBtn?.addEventListener("click", clearManualForm);
 
-  // Duplicate Games event listeners
-  checkDuplicatesBtn.addEventListener('click', checkDuplicateGames);
-  removeAllDuplicatesBtn.addEventListener('click', removeAllDuplicateGames);
-  closeDuplicateModalBtn.addEventListener('click', closeDuplicateModal);
-  closeDuplicateModalBtnTop.addEventListener('click', closeDuplicateModal); // Close button in modal header
-  
-  // Close modal if user clicks outside of it
-  window.addEventListener('click', (event) => {
-    if (event.target === confirmationModal) {
-      closeModal();
-    }
-    if (event.target === duplicateModal) { // Close duplicate modal
-      closeDuplicateModal();
-    }
+  prevPageBtn?.addEventListener("click", () => changePage(-1));
+  nextPageBtn?.addEventListener("click", () => changePage(1));
+  pageSizeSelect?.addEventListener("change", changePageSize);
+  prevPageBtnBottom?.addEventListener("click", () => changePage(-1));
+  nextPageBtnBottom?.addEventListener("click", () => changePage(1));
+
+  checkDuplicatesBtn?.addEventListener("click", checkDuplicateGames);
+  removeAllDuplicatesBtn?.addEventListener("click", removeAllDuplicateGames);
+  removeSelectedDuplicatesBtn?.addEventListener("click", removeSelectedDuplicateGames);
+  selectAllDuplicatesCheckbox?.addEventListener("change", onSelectAllDuplicates);
+  closeDuplicateModalBtn?.addEventListener("click", closeDuplicateModal);
+  closeDuplicateModalBtnTop?.addEventListener("click", closeDuplicateModal);
+
+  applyFiltersBtn?.addEventListener("click", applyFilters);
+  downloadFailedBtn?.addEventListener("click", downloadFailedGames);
+
+  window.addEventListener("click", (event) => {
+    if (event.target === confirmationModal) closeModal();
+    if (event.target === duplicateModal) closeDuplicateModal();
   });
 
-  // Toggle between JSON and manual import modes
-  function toggleImportMode() {
-    if (manualModeRadio.checked) {
-      jsonImportForm.classList.add('hidden');
-      manualEntryForm.classList.remove('hidden');
-    } else {
-      jsonImportForm.classList.remove('hidden');
-      manualEntryForm.classList.add('hidden');
+  /* Set initial mode visibility based on which radio is checked at load. */
+  toggleImportMode();
+
+  /* ---------- category selectors ---------- */
+  function populateCategorySelectors() {
+    if (mainCategoryContainer) {
+      let html = '<label class="detail-label">Select Main Category:</label><div class="radio-grid">';
+      MAIN_CATEGORIES.forEach((category, index) => {
+        const id = `cat_radio_${index}`;
+        const checked = index === 0 ? "checked" : "";
+        html += `<div class="radio-item"><input type="radio" id="${id}" name="mainCategory" value="${escapeAttr(category)}" ${checked}><label for="${id}">${escapeHtml(category)}</label></div>`;
+      });
+      html += "</div>";
+      mainCategoryContainer.innerHTML = html;
+      mainCategoryContainer.querySelectorAll('input[name="mainCategory"]').forEach((el) => {
+        el.addEventListener("change", (e) => {
+          if (e.target.checked) selectedMainCategory = e.target.value;
+        });
+      });
+    }
+    if (manualMainCategorySelect) {
+      manualMainCategorySelect.innerHTML = MAIN_CATEGORIES.map(
+        (c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`,
+      ).join("");
     }
   }
 
-  // Load saved credentials from localStorage
-  function loadSavedCredentials() {
-    const savedUrl = localStorage.getItem('supabaseUrl');
-    const savedKey = localStorage.getItem('supabaseKey');
-    
-    if (savedUrl) {
-      supabaseUrlInput.value = savedUrl;
-    }
-    
-    if (savedKey) {
-      supabaseKeyInput.value = savedKey;
-    }
-    
-    if (savedUrl && savedKey) {
-      saveCredentialsCheckbox.checked = true;
-    }
+  function getSelectedMainCategory() {
+    /* Read from radio buttons live so we always have the current value. */
+    const checked = document.querySelector('input[name="mainCategory"]:checked');
+    return checked?.value || selectedMainCategory;
   }
 
-  // Save credentials to localStorage
-  function saveCredentials() {
-    if (saveCredentialsCheckbox.checked) {
-      localStorage.setItem('supabaseUrl', supabaseUrlInput.value);
-      localStorage.setItem('supabaseKey', supabaseKeyInput.value);
-    } else {
-      localStorage.removeItem('supabaseUrl');
-      localStorage.removeItem('supabaseKey');
-    }
-  }
-
-  // Handle initial import process to display games for review
-  async function handleImport() {
+  /* ---------- server health ---------- */
+  async function pingServer() {
+    if (!serverStatusEl) return;
+    serverStatusEl.textContent = "Pinging server…";
+    serverStatusEl.className = "status-pending";
     try {
-      // Validate inputs
-      if (!validateInputs()) {
-        return;
+      const res = await fetch(`${API}/api/health`);
+      const data = await res.json();
+      if (data.supabaseConfigured) {
+        serverStatusEl.textContent = "Server connected, Supabase configured ✓";
+        serverStatusEl.className = "status-ok";
+      } else {
+        serverStatusEl.textContent =
+          "Server connected, Supabase NOT configured. Set SUPABASE_URL + SUPABASE_KEY in server/.env, then restart the server.";
+        serverStatusEl.className = "status-warning";
       }
+    } catch (err) {
+      console.error("pingServer:", err);
+      serverStatusEl.textContent =
+        "Server unreachable. Start it: cd server && npm install && npm start";
+      serverStatusEl.className = "status-error";
+    }
+  }
 
-      // Save credentials if checkbox is checked
-      saveCredentials();
-
-      // Initialize Supabase client
-      initSupabase();
-
-      // Get file and read its content
-      const file = jsonFileInput.files[0];
-      const provider = providerSelect.value;
-      const mainCategory = mainCategorySelect.value;
-      
-      // Reset UI
-      resetResults();
-      updateStatus('Reading file...', 'info');
-      
-      // Read and parse the JSON file
-      const fileContent = await readFileAsJson(file);
-      if (!fileContent) {
-        updateStatus('Failed to read or parse JSON file', 'error');
-        return;
+  async function refreshProvidersList() {
+    if (!providerSelect) return;
+    try {
+      const res = await fetch(`${API}/api/providers`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const previous = providerSelect.value;
+      const options = [`<option value="auto" selected>Auto-detect from file</option>`];
+      for (const p of data.providers) {
+        options.push(`<option value="${escapeAttr(p.id)}">${escapeHtml(p.label)}</option>`);
       }
-
-      // Process data based on provider
-      let games = [];
-      if (provider === 'gamemonitize') {
-        games = processGamemonitizeData(fileContent, mainCategory);
-      } else if (provider === 'gamepix') {
-        games = processGamepixData(fileContent, mainCategory);
-      }
-
-      if (games.length === 0) {
-        updateStatus('No valid games found in the file', 'error');
-        return;
-      }
-
-      updateStatus(`Found ${games.length} games. Ready for review.`, 'success');
-      
-      // Store processed games
-      processedGames = games;
-      currentPage = 1; // Reset to first page
-      
-      // Display games for review with pagination
-      renderGamesList();
-      
-    } catch (error) {
-      console.error('Import error:', error);
-      updateStatus(`Error: ${error.message}`, 'error');
+      providerSelect.innerHTML = options.join("");
+      if (previous) providerSelect.value = previous;
+    } catch (err) {
+      console.error("refreshProvidersList:", err);
     }
   }
-  
-  // --- Pagination Functions ---
-  function renderGamesList() {
-    gamesList.innerHTML = ''; // Clear any existing games
-    gamePreviewContainer.classList.remove('hidden'); // Show the game preview container
 
-    const totalGames = processedGames.length;
-    const totalPages = Math.ceil(totalGames / gamesPerPage);
-    
-    // Update games counter
-    gamesCounter.textContent = `${totalGames} games loaded`;
-
-    // Calculate start and end index for current page
-    const startIndex = (currentPage - 1) * gamesPerPage;
-    const endIndex = Math.min(startIndex + gamesPerPage, totalGames);
-    
-    const gamesToDisplay = processedGames.slice(startIndex, endIndex);
-
-    if (gamesToDisplay.length === 0 && totalGames > 0) {
-        // If no games on current page but total games exist, go to previous page
-        currentPage = Math.max(1, currentPage - 1);
-        renderGamesList();
-        return;
-    }
-
-    gamesToDisplay.forEach((game, index) => {
-      // Adjust index to reflect its original position in processedGames
-      const originalIndex = startIndex + index;
-      const gameCard = document.createElement('div');
-      gameCard.className = 'game-item';
-      gameCard.dataset.index = originalIndex; // Store original index
-      
-      // Create the iframe container
-      const iframeContainer = document.createElement('div');
-      iframeContainer.className = 'game-iframe-container';
-      
-      // Create the iframe
-      const iframe = document.createElement('iframe');
-      iframe.className = 'game-iframe';
-      iframe.src = game.play_url;
-      iframe.setAttribute('allowfullscreen', 'true');
-      
-      iframeContainer.appendChild(iframe);
-      gameCard.appendChild(iframeContainer);
-      
-      // Create game details section
-      const detailsContainer = document.createElement('div');
-      detailsContainer.className = 'game-details';
-      
-      // Create editable title
-      const titleLabel = document.createElement('label');
-      titleLabel.textContent = 'Title:';
-      titleLabel.className = 'detail-label';
-
-      const titleInput = document.createElement('input');
-      titleInput.type = 'text';
-      titleInput.className = 'game-title-input';
-      titleInput.value = game.title;
-      titleInput.dataset.field = 'title';
-      titleInput.addEventListener('change', (e) => updateGameData(originalIndex, 'title', e.target.value));
-      
-      // Create editable description
-      const descriptionLabel = document.createElement('label');
-      descriptionLabel.textContent = 'Description:';
-      descriptionLabel.className = 'detail-label';
-
-      const descriptionTextarea = document.createElement('textarea');
-      descriptionTextarea.className = 'game-description';
-      descriptionTextarea.value = game.description;
-      descriptionTextarea.rows = 4;
-      descriptionTextarea.dataset.field = 'description';
-      descriptionTextarea.addEventListener('change', (e) => updateGameData(originalIndex, 'description', e.target.value));
-
-      // Create editable instructions
-      const instructionsLabel = document.createElement('label');
-      instructionsLabel.textContent = 'Instructions:';
-      instructionsLabel.className = 'detail-label';
-
-      const instructionsTextarea = document.createElement('textarea');
-      instructionsTextarea.className = 'game-instructions';
-      instructionsTextarea.value = game.instructions || '';
-      instructionsTextarea.rows = 3;
-      instructionsTextarea.dataset.field = 'instructions';
-      instructionsTextarea.addEventListener('change', (e) => updateGameData(originalIndex, 'instructions', e.target.value));
-      
-      // Create additional details section
-      const additionalDetails = document.createElement('div');
-      additionalDetails.className = 'additional-details';
-      
-      // Add category input
-      const categoryLabel = document.createElement('label');
-      categoryLabel.textContent = 'Category:';
-      categoryLabel.className = 'detail-label';
-
-      const categoryInput = document.createElement('input');
-      categoryInput.type = 'text';
-      categoryInput.className = 'detail-input';
-      categoryInput.value = game.category;
-      categoryInput.dataset.field = 'category';
-      categoryInput.addEventListener('change', (e) => updateGameData(originalIndex, 'category', e.target.value));
-      
-      // Add main category select
-      const mainCategoryLabel = document.createElement('label');
-      mainCategoryLabel.textContent = 'Main Category:';
-      mainCategoryLabel.className = 'detail-label';
-
-      const mainCategorySelect = document.createElement('select');
-      mainCategorySelect.className = 'detail-select';
-      mainCategorySelect.dataset.field = 'main_category';
-      
-      // Add options for each main category
-      mainCategories.forEach(category => {
-        const option = document.createElement('option');
-        option.value = category;
-        option.textContent = category;
-        option.selected = game.main_category === category;
-        mainCategorySelect.appendChild(option);
-      });
-      
-      mainCategorySelect.addEventListener('change', (e) => updateGameData(originalIndex, 'main_category', e.target.value));
-      
-      // Add tags input
-      const tagsLabel = document.createElement('label');
-      tagsLabel.textContent = 'Tags:';
-      tagsLabel.className = 'detail-label';
-
-      const tagsInput = document.createElement('input');
-      tagsInput.type = 'text';
-      tagsInput.className = 'detail-input';
-      tagsInput.value = game.tags || '';
-      tagsInput.dataset.field = 'tags';
-      tagsInput.addEventListener('change', (e) => updateGameData(originalIndex, 'tags', e.target.value));
-      
-      // Add dimensions input
-      const dimensionsContainer = document.createElement('div');
-      dimensionsContainer.className = 'dimensions-container';
-      
-      const widthLabel = document.createElement('label');
-      widthLabel.textContent = 'Width:';
-      widthLabel.className = 'detail-label-small';
-      
-      const widthInput = document.createElement('input');
-      widthInput.type = 'text';
-      widthInput.className = 'detail-input-small';
-      widthInput.value = game.width || '';
-      widthInput.dataset.field = 'width';
-      widthInput.addEventListener('change', (e) => updateGameData(originalIndex, 'width', e.target.value));
-      
-      const heightLabel = document.createElement('label');
-      heightLabel.textContent = 'Height:';
-      heightLabel.className = 'detail-label-small';
-      
-      const heightInput = document.createElement('input');
-      heightInput.type = 'text';
-      heightInput.className = 'detail-input-small';
-      heightInput.value = game.height || '';
-      heightInput.dataset.field = 'height';
-      heightInput.addEventListener('change', (e) => updateGameData(originalIndex, 'height', e.target.value));
-      
-      dimensionsContainer.appendChild(widthLabel);
-      dimensionsContainer.appendChild(widthInput);
-      dimensionsContainer.appendChild(heightLabel);
-      dimensionsContainer.appendChild(heightInput);
-      
-      // Add is featured checkbox
-      const featuredContainer = document.createElement('div');
-      featuredContainer.className = 'featured-container';
-      
-      const featuredLabel = document.createElement('label');
-      featuredLabel.textContent = 'Featured Game:';
-      featuredLabel.className = 'detail-label';
-      
-      const featuredCheckbox = document.createElement('input');
-      featuredCheckbox.type = 'checkbox';
-      featuredCheckbox.className = 'detail-checkbox';
-      featuredCheckbox.checked = game.is_featured || false;
-      featuredCheckbox.dataset.field = 'is_featured';
-      featuredCheckbox.addEventListener('change', (e) => updateGameData(originalIndex, 'is_featured', e.target.checked));
-      
-      featuredContainer.appendChild(featuredLabel);
-      featuredContainer.appendChild(featuredCheckbox);
-      
-      // Add game URL input
-      const urlLabel = document.createElement('label');
-      urlLabel.textContent = 'Game URL:';
-      urlLabel.className = 'detail-label';
-      
-      const urlInput = document.createElement('input');
-      urlInput.type = 'text';
-      urlInput.className = 'detail-input';
-      urlInput.value = game.play_url || '';
-      urlInput.dataset.field = 'play_url';
-      urlInput.addEventListener('change', (e) => {
-        updateGameData(originalIndex, 'play_url', e.target.value);
-        // Update iframe src
-        iframe.src = e.target.value;
-      });
-      
-      // Add thumbnail image URL input
-      const thumbnailLabel = document.createElement('label');
-      thumbnailLabel.textContent = 'Thumbnail URL:';
-      thumbnailLabel.className = 'detail-label';
-      
-      const thumbnailInput = document.createElement('input');
-      thumbnailInput.type = 'text';
-      thumbnailInput.className = 'detail-input';
-      thumbnailInput.value = game.thumbnail_image || '';
-      thumbnailInput.dataset.field = 'thumbnail_image';
-      thumbnailInput.addEventListener('change', (e) => updateGameData(originalIndex, 'thumbnail_image', e.target.value));
-      
-      // Add actions section
-      const actions = document.createElement('div');
-      actions.className = 'game-actions';
-      
-      // Add remove button
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-game-btn';
-      removeBtn.textContent = 'Remove Game';
-      removeBtn.addEventListener('click', () => removeGame(originalIndex));
-      
-      // Append all elements
-      additionalDetails.appendChild(categoryLabel);
-      additionalDetails.appendChild(categoryInput);
-      additionalDetails.appendChild(mainCategoryLabel);
-      additionalDetails.appendChild(mainCategorySelect);
-      additionalDetails.appendChild(tagsLabel);
-      additionalDetails.appendChild(tagsInput);
-      additionalDetails.appendChild(dimensionsContainer);
-      additionalDetails.appendChild(featuredContainer);
-      additionalDetails.appendChild(urlLabel);
-      additionalDetails.appendChild(urlInput);
-      additionalDetails.appendChild(thumbnailLabel);
-      additionalDetails.appendChild(thumbnailInput);
-      
-      actions.appendChild(removeBtn);
-      
-      detailsContainer.appendChild(titleLabel);
-      detailsContainer.appendChild(titleInput);
-      detailsContainer.appendChild(descriptionLabel);
-      detailsContainer.appendChild(descriptionTextarea);
-      detailsContainer.appendChild(instructionsLabel);
-      detailsContainer.appendChild(instructionsTextarea);
-      detailsContainer.appendChild(additionalDetails);
-      detailsContainer.appendChild(actions);
-      
-      gameCard.appendChild(detailsContainer);
-      
-      // Add to the games list
-      gamesList.appendChild(gameCard);
-    });
-
-    updatePaginationControls(totalPages);
-  }
-
-  function updatePaginationControls(totalPages) {
-    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
-    pageInfoBottom.textContent = `Page ${currentPage} of ${totalPages}`; // Update bottom pagination
-
-    prevPageBtn.disabled = currentPage === 1;
-    prevPageBtnBottom.disabled = currentPage === 1; // Update bottom pagination
-
-    nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
-    nextPageBtnBottom.disabled = currentPage === totalPages || totalPages === 0; // Update bottom pagination
-
-    // Show/hide pagination controls if there's only one page
-    const paginationContainers = document.querySelectorAll('.pagination-controls');
-    paginationContainers.forEach(container => {
-        if (totalPages <= 1) {
-            container.classList.add('hidden');
-        } else {
-            container.classList.remove('hidden');
-        }
-    });
-  }
-
-  function changePage(direction) {
-    const totalPages = Math.ceil(processedGames.length / gamesPerPage);
-    currentPage += direction;
-
-    if (currentPage < 1) {
-      currentPage = 1;
-    } else if (currentPage > totalPages) {
-      currentPage = totalPages;
-    }
-    renderGamesList();
-  }
-
-  function changePageSize() {
-    gamesPerPage = parseInt(pageSizeSelect.value);
-    currentPage = 1; // Reset to first page when page size changes
-    renderGamesList();
-  }
-  
-  // Update game data in memory
-  function updateGameData(index, field, value) {
-    if (index >= 0 && index < processedGames.length) {
-      processedGames[index][field] = value;
+  /* ---------- mode toggle ---------- */
+  function toggleImportMode() {
+    const showManual = !!manualModeRadio?.checked;
+    if (showManual) {
+      jsonImportForm?.classList.add("hidden");
+      manualEntryForm?.classList.remove("hidden");
+    } else {
+      jsonImportForm?.classList.remove("hidden");
+      manualEntryForm?.classList.add("hidden");
     }
   }
-  
-  // Remove a game from the list
-  function removeGame(index) {
-    if (index >= 0 && index < processedGames.length) {
-      // Remove from data array
-      processedGames.splice(index, 1);
-      
-      // Redisplay games with pagination
-      renderGamesList();
-    }
-  }
-  
-  // Show confirmation modal
-  function showConfirmationModal() {
-    if (processedGames.length === 0) {
-      updateStatus('No games to upload', 'error');
+
+  /* ---------- JSON import flow ---------- */
+  async function handleImport() {
+    if (!validateInputs()) return;
+    resetResults();
+    updateStatus("Reading file…", "info");
+
+    const file = jsonFileInput.files[0];
+    const provider = providerSelect.value || "auto";
+    const mainCategory = getSelectedMainCategory();
+
+    let raw;
+    try {
+      raw = JSON.parse(await file.text());
+    } catch (err) {
+      updateStatus(`Failed to parse JSON: ${err.message}`, "error");
       return;
     }
-    
-    // Populate the modal with game list
-    modalGameList.innerHTML = '';
-    
-    processedGames.forEach((game, index) => {
-      const gameItem = document.createElement('div');
-      gameItem.className = 'modal-game-item';
-      
-      // Create game summary content
-      const gameTitle = document.createElement('h3');
-      gameTitle.className = 'modal-game-title';
-      gameTitle.textContent = game.title;
-      
-      const gameInfo = document.createElement('div');
-      gameInfo.className = 'modal-game-info';
-      
-      // Add thumbnail
-      if (game.thumbnail_image) {
-        const thumbnail = document.createElement('img');
-        thumbnail.className = 'modal-game-thumbnail';
-        thumbnail.src = game.thumbnail_image;
-        thumbnail.alt = game.title;
-        gameInfo.appendChild(thumbnail);
-      }
-      
-      // Add details
-      const gameDetails = document.createElement('div');
-      gameDetails.className = 'modal-game-details';
-      
-      // Add key details
-      const categoryText = document.createElement('p');
-      categoryText.innerHTML = `<strong>Category:</strong> ${game.category} (${game.main_category})`;
-      
-      const tagsText = document.createElement('p');
-      tagsText.innerHTML = `<strong>Tags:</strong> ${game.tags || 'None'}`;
-      
-      const dimensionsText = document.createElement('p');
-      dimensionsText.innerHTML = `<strong>Dimensions:</strong> ${game.width || 'N/A'} × ${game.height || 'N/A'}`;
-      
-      const featuredText = document.createElement('p');
-      featuredText.innerHTML = `<strong>Featured:</strong> ${game.is_featured ? 'Yes' : 'No'}`;
-      
-      // Append all details
-      gameDetails.appendChild(categoryText);
-      gameDetails.appendChild(tagsText);
-      gameDetails.appendChild(dimensionsText);
-      gameDetails.appendChild(featuredText);
-      
-      gameInfo.appendChild(gameDetails);
-      
-      // Append all elements to the game item
-      gameItem.appendChild(gameTitle);
-      gameItem.appendChild(gameInfo);
-      
-      modalGameList.appendChild(gameItem);
-    });
-    
-    // Show total count
-    const totalCount = document.createElement('div');
-    totalCount.className = 'modal-total-count';
-    totalCount.textContent = `Total Games: ${processedGames.length}`;
-    modalGameList.appendChild(totalCount);
-    
-    // Show the modal
-    confirmationModal.style.display = 'block';
-  }
-  
-  // Close the modal
-  function closeModal() {
-    confirmationModal.style.display = 'none';
-  }
-  
-  // Handle final submission of all games
-  async function handleSubmitAll() {
+
+    updateStatus("Normalizing on server…", "info");
     try {
-      if (processedGames.length === 0) {
-        updateStatus('No games to upload', 'error');
-        return;
+      const res = await fetch(`${API}/api/process`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, mainCategory, raw }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
+      unfilteredGames = data.games;
+      processedGames = data.games.slice();
+      currentPage = 1;
+      const detectedNote = data.detected ? ` (auto-detected as ${data.providerLabel})` : "";
+      updateStatus(
+        `Loaded ${data.count} games${detectedNote}. Review, then submit.`,
+        "success",
+      );
+      renderGamesList();
+    } catch (err) {
+      updateStatus(`Process failed: ${err.message}`, "error");
+    }
+  }
+
+  async function applyFilters() {
+    if (!unfilteredGames.length) {
+      updateStatus("Nothing to filter — import a file first.", "warning");
+      return;
+    }
+    const minQuality = filterQualityInput?.value ? parseFloat(filterQualityInput.value) : null;
+    const requireThumbnail = !!filterRequireThumb?.checked;
+    try {
+      const res = await fetch(`${API}/api/filter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ games: unfilteredGames, minQuality, requireThumbnail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Filter failed");
+      processedGames = data.games;
+      currentPage = 1;
+      updateStatus(
+        `Filtered: ${data.count} of ${unfilteredGames.length} games match.`,
+        data.count > 0 ? "success" : "warning",
+      );
+      renderGamesList();
+    } catch (err) {
+      updateStatus(`Filter error: ${err.message}`, "error");
+    }
+  }
+
+  /* ---------- duplicates ---------- */
+  async function checkDuplicateGames() {
+    if (!processedGames.length) {
+      updateStatus("No games to check.", "error");
+      return;
+    }
+    updateStatus("Checking for duplicates on server…", "info");
+    try {
+      const res = await fetch(`${API}/api/check-duplicates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ games: processedGames }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Duplicate check failed");
+      duplicatePairs = data.duplicates;
+      if (duplicatePairs.length > 0) {
+        displayDuplicateModal(duplicatePairs);
+        updateStatus(`${duplicatePairs.length} duplicate(s) found.`, "warning");
+      } else {
+        updateStatus("No duplicates found in Supabase. Safe to upload.", "success");
       }
-      
-      // Close the modal
-      closeModal();
-      
-      // Start the upload process
-      await importGamesToSupabase(processedGames, providerSelect.value);
-      
-      // Clear the review section after successful upload
-      gamePreviewContainer.classList.add('hidden');
-      processedGames = [];
-      
-    } catch (error) {
-      console.error('Submit error:', error);
-      updateStatus(`Error: ${error.message}`, 'error');
+    } catch (err) {
+      updateStatus(`Error checking duplicates: ${err.message}`, "error");
     }
   }
 
-  // Validate form inputs
-  function validateInputs() {
-    if (!jsonFileInput.files.length) {
-      updateStatus('Please select a JSON file', 'error');
-      return false;
-    }
+  function displayDuplicateModal(duplicates) {
+    duplicateGameList.innerHTML = "";
+    duplicates.forEach((dup, index) => {
+      const item = document.createElement("div");
+      item.className = "duplicate-game-item";
+      item.dataset.index = String(index);
 
-    if (!supabaseUrlInput.value || !supabaseKeyInput.value) {
-      updateStatus('Supabase URL and API key are required', 'error');
-      return false;
-    }
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "duplicate-checkbox";
+      checkbox.dataset.index = String(index);
+      checkbox.addEventListener("change", updateDuplicateSelectionCount);
 
-    return true;
-  }
+      const content = document.createElement("div");
+      content.className = "duplicate-content";
 
-  // Initialize Supabase client
-  function initSupabase() {
-    const supabaseUrl = supabaseUrlInput.value;
-    const supabaseKey = supabaseKeyInput.value;
-    supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
-  }
+      const title = document.createElement("h3");
+      title.textContent = dup.localGame?.title || dup.existingGame?.title || "Unknown";
 
-  // Read file as JSON
-  function readFileAsJson(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = function(event) {
-        try {
-          const jsonData = JSON.parse(event.target.result);
-          resolve(jsonData);
-        } catch (error) {
-          reject(new Error('Invalid JSON file'));
-        }
-      };
-      
-      reader.onerror = function() {
-        reject(new Error('Error reading file'));
-      };
-      
-      reader.readAsText(file);
+      const details = document.createElement("p");
+      const local = dup.localGame || {};
+      const existing = dup.existingGame || {};
+      details.innerHTML = `
+        <strong>Provider:</strong> ${escapeHtml(local.provider || "")}<br>
+        <strong>Provider Game ID:</strong> ${escapeHtml(local.provider_game_id || "")}<br>
+        <strong>Existing Supabase ID:</strong> ${escapeHtml(String(existing.id ?? ""))}<br>
+        <strong>Existing Supabase Title:</strong> ${escapeHtml(existing.title || "")}
+      `;
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "remove-duplicate-btn";
+      removeBtn.textContent = "Remove This";
+      removeBtn.addEventListener("click", () => removeSingleDuplicate(index));
+
+      content.append(title, details, removeBtn);
+      item.append(checkbox, content);
+      duplicateGameList.appendChild(item);
     });
+    if (selectAllDuplicatesCheckbox) selectAllDuplicatesCheckbox.checked = false;
+    updateDuplicateSelectionCount();
+    duplicateModal.style.display = "block";
   }
 
-  // Process GameMonitize data
-  function processGamemonitizeData(data, mainCategory) {
-    if (!Array.isArray(data)) {
-      console.error('GameMonitize data is not in expected format');
-      return [];
-    }
+  function updateDuplicateSelectionCount() {
+    if (!duplicateSelectionCount) return;
+    const selected = duplicateGameList.querySelectorAll(".duplicate-checkbox:checked").length;
+    duplicateSelectionCount.textContent = `${selected} selected`;
+  }
 
-    return data.map(game => {
-      // Check if game should be featured based on tags or other criteria
-      const isFeatured = shouldBeGamemonitizeFeatured(game);
-
-      // Create properly processed game object
-      return {
-        provider_game_id: game.id,
-        title: game.title,
-        description: game.description ? game.description.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>') : '',
-        instructions: game.instructions || '',
-        slug: generateSlug(game.title),
-        category: game.category || 'Uncategorized',
-        main_category: mainCategory, // <-- FIX: Always use the selected main category
-        tags: game.tags || '',
-        orientation: determineOrientation(game.width, game.height),
-        quality_score: null,
-        width: game.width || '800',
-        height: game.height || '600',
-        date_modified: null,
-        date_published: null,
-        banner_image: null,
-        thumbnail_image: game.thumb || '',
-        play_url: game.url || '',
-        provider: 'gamemonitize',
-        play_count: 0,
-        is_featured: isFeatured, // Set the is_featured flag separately
-        is_new: true
-      };
+  function onSelectAllDuplicates(e) {
+    const checked = e.target.checked;
+    duplicateGameList.querySelectorAll(".duplicate-checkbox").forEach((cb) => {
+      cb.checked = checked;
     });
+    updateDuplicateSelectionCount();
   }
 
-  // Helper function to determine if a GameMonitize game should be featured
-  function shouldBeGamemonitizeFeatured(game) {
-    if (!game || !game.tags) return false;
-    
-    // Define criteria for featuring GameMonitize games
-    const featuredTags = ['Best Games', 'Best', 'Top Games', 'Popular'];
-    const gameTags = game.tags.toLowerCase();
-    
-    // Check if any featured tags are present
-    return featuredTags.some(tag => gameTags.includes(tag.toLowerCase()));
-  }
-
-  // Process GamePix data
-  function processGamepixData(data, mainCategory) {
-    if (!data.items || !Array.isArray(data.items)) {
-      return [];
+  function removeSingleDuplicate(index) {
+    const dup = duplicatePairs[index];
+    if (!dup?.localGame) return;
+    processedGames = processedGames.filter(
+      (g) =>
+        !(
+          g.provider === dup.localGame.provider &&
+          g.provider_game_id === dup.localGame.provider_game_id
+        ),
+    );
+    duplicatePairs = duplicatePairs.filter((_, i) => i !== index);
+    if (duplicatePairs.length > 0) displayDuplicateModal(duplicatePairs);
+    else {
+      closeDuplicateModal();
+      updateStatus("All flagged duplicates removed.", "success");
     }
-
-    return data.items.map(game => {
-      // Check if game should be featured based on quality score
-      const isFeatured = shouldBeGamepixFeatured(game);
-      
-      return {
-        provider_game_id: game.id,
-        title: game.title,
-        description: game.description || '',
-        instructions: '', // Not available in GamePix sample
-        slug: game.namespace || generateSlug(game.title),
-        category: game.category || 'Uncategorized',
-        main_category: mainCategory, // <-- FIX: Always use the selected main category
-        tags: '', // Not available in the sample
-        orientation: game.orientation || determineOrientation(game.width, game.height),
-        quality_score: game.quality_score,
-        width: game.width || '800',
-        height: game.height || '600',
-        date_modified: game.date_modified ? new Date(game.date_modified).toISOString() : null,
-        date_published: game.date_published ? new Date(game.date_published).toISOString() : null,
-        banner_image: game.banner_image || null,
-        thumbnail_image: game.image || '',
-        play_url: game.url || '',
-        provider: 'gamepix',
-        play_count: 0,
-        is_featured: isFeatured, // Set the is_featured flag separately
-        is_new: true
-      };
-    });
+    renderGamesList();
   }
 
-  // Helper function to determine if a GamePix game should be featured
-  function shouldBeGamepixFeatured(game) {
-    // Define criteria for featuring GamePix games
-    const QUALITY_SCORE_THRESHOLD = 0.85; // Games with quality score above 85% are featured
-    return game.quality_score >= QUALITY_SCORE_THRESHOLD;
-  }
-
-  // Import games to Supabase
-  async function importGamesToSupabase(games, provider) {
-    const total = games.length;
-    let successful = 0;
-    let failed = 0;
-    
-    updateProgressBar(0);
-    
-    for (let i = 0; i < games.length; i++) {
-      const game = games[i];
-      try {
-        // Deep copy the game object and remove any fields that might not be in the database schema
-        const gameData = prepareGameData(game);
-        
-        // Check if game already exists
-        const { data: existingGames, error: queryError } = await supabaseClient
-          .from('games')
-          .select('id')
-          .eq('provider', provider)
-          .eq('provider_game_id', gameData.provider_game_id)
-          .limit(1);
-        
-        if (queryError) {
-          throw new Error(`Database query error: ${queryError.message}`);
-        }
-        
-        let result;
-        let message;
-        
-        if (existingGames && existingGames.length > 0) {
-          // Update existing game
-          result = await supabaseClient
-            .from('games')
-            .update(gameData)
-            .eq('id', existingGames[0].id);
-            
-          message = 'Updated existing game';
-        } else {
-          // Insert new game
-          result = await supabaseClient
-            .from('games')
-            .insert(gameData);
-            
-          message = 'Inserted new game';
-        }
-        
-        if (result.error) {
-          // Provide more detailed error message
-          const errorMsg = result.error.message;
-          const detailedError = result.error.details ? `: ${result.error.details}` : '';
-          throw new Error(`${errorMsg}${detailedError}`);
-        }
-        
-        // Add to results table
-        addResultRow(true, gameData.title, provider, message);
-        successful++;
-      } catch (error) {
-        console.error('Error importing game:', error);
-        addResultRow(false, game.title, provider, error.message);
-        failed++;
-      }
-      
-      // Update progress
-      const progress = Math.round(((i + 1) / total) * 100);
-      updateProgressBar(progress);
+  function removeSelectedDuplicateGames() {
+    const checkedIndexes = [...duplicateGameList.querySelectorAll(".duplicate-checkbox:checked")]
+      .map((cb) => Number(cb.dataset.index))
+      .filter((i) => !Number.isNaN(i));
+    if (!checkedIndexes.length) {
+      updateStatus("No duplicates selected.", "warning");
+      return;
     }
-    
-    // Update final status
-    if (failed === 0) {
-      updateStatus(`Successfully imported ${successful} games`, 'success');
+    const toRemove = new Set(
+      checkedIndexes
+        .map((i) => duplicatePairs[i])
+        .filter(Boolean)
+        .map((d) => `${d.localGame?.provider}::${d.localGame?.provider_game_id}`),
+    );
+    const before = processedGames.length;
+    processedGames = processedGames.filter(
+      (g) => !toRemove.has(`${g.provider}::${g.provider_game_id}`),
+    );
+    duplicatePairs = duplicatePairs.filter(
+      (d, i) => !checkedIndexes.includes(i),
+    );
+    const removed = before - processedGames.length;
+    if (duplicatePairs.length > 0) {
+      displayDuplicateModal(duplicatePairs);
+      updateStatus(`Removed ${removed} selected duplicates. ${duplicatePairs.length} remaining.`, "info");
     } else {
-      updateStatus(`Imported ${successful} games, failed ${failed} games`, 'info');
+      closeDuplicateModal();
+      updateStatus(`Removed ${removed} selected duplicates. List clear.`, "success");
     }
+    renderGamesList();
   }
-  
-  // Prepare game data for database insertion by removing any fields that might not match the schema
-  function prepareGameData(game) {
-    // Create a deep copy to avoid modifying the original object
-    const gameData = JSON.parse(JSON.stringify(game));
-    
-    // List of known valid fields in our database schema
-    const validFields = [
-      'provider_game_id', 'title', 'description', 'instructions', 'slug',
-      'category', 'main_category', 'tags', 'orientation', 'quality_score',
-      'width', 'height', 'date_modified', 'date_published', 'banner_image',
-      'thumbnail_image', 'play_url', 'provider', 'play_count', 'is_featured', 'is_new'
-    ];
-    
-    // Create a new object with only the valid fields
-    const cleanedData = {};
-    validFields.forEach(field => {
-      if (gameData[field] !== undefined) {
-        cleanedData[field] = gameData[field];
-      }
+
+  function removeAllDuplicateGames() {
+    const dupKeys = new Set(
+      duplicatePairs
+        .map((d) => `${d.localGame?.provider}::${d.localGame?.provider_game_id}`)
+        .filter((k) => !k.includes("undefined")),
+    );
+    const before = processedGames.length;
+    processedGames = processedGames.filter(
+      (g) => !dupKeys.has(`${g.provider}::${g.provider_game_id}`),
+    );
+    duplicatePairs = [];
+    closeDuplicateModal();
+    updateStatus(`Removed ${before - processedGames.length} duplicates from upload list.`, "info");
+    renderGamesList();
+  }
+
+  function closeDuplicateModal() {
+    if (duplicateModal) duplicateModal.style.display = "none";
+  }
+
+  /* ---------- submit ---------- */
+  function showConfirmationModal() {
+    if (!processedGames.length) {
+      updateStatus("No games to submit.", "error");
+      return;
+    }
+    modalGameList.innerHTML = "";
+    processedGames.slice(0, 50).forEach((g) => {
+      const li = document.createElement("div");
+      li.className = "modal-game-item";
+      li.textContent = `${g.title} — ${g.category}`;
+      modalGameList.appendChild(li);
     });
-    
-    return cleanedData;
+    if (processedGames.length > 50) {
+      const more = document.createElement("div");
+      more.className = "modal-game-item";
+      more.textContent = `…and ${processedGames.length - 50} more.`;
+      modalGameList.appendChild(more);
+    }
+    confirmationModal.style.display = "block";
   }
 
-  // Generate URL-friendly slug from game title
-  function generateSlug(title) {
-    return title
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '') // Remove non-word chars
-      .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
-      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+  function closeModal() {
+    if (confirmationModal) confirmationModal.style.display = "none";
   }
 
-  // Determine game orientation from dimensions
-  function determineOrientation(width, height) {
-    if (!width || !height) return 'landscape';
-    return parseInt(width) >= parseInt(height) ? 'landscape' : 'portrait';
-  }
-
-  // Add a result row to the results table
-  function addResultRow(success, title, provider, message) {
-    const row = document.createElement('tr');
-    
-    const statusCell = document.createElement('td');
-    statusCell.textContent = success ? 'Success' : 'Failed';
-    statusCell.className = success ? 'success' : 'error';
-    
-    const titleCell = document.createElement('td');
-    titleCell.textContent = title;
-    
-    const providerCell = document.createElement('td');
-    providerCell.textContent = provider;
-    
-    const messageCell = document.createElement('td');
-    messageCell.textContent = message;
-    
-    row.appendChild(statusCell);
-    row.appendChild(titleCell);
-    row.appendChild(providerCell);
-    row.appendChild(messageCell);
-    
-    resultsBody.appendChild(row);
-  }
-
-  // Update progress bar
-  function updateProgressBar(percentage) {
-    progressBar.style.width = `${percentage}%`;
-  }
-
-  // Update status message
-  function updateStatus(message, type) {
-    statusMessage.textContent = message;
-    statusMessage.className = `status-message ${type}`;
-  }
-
-  // Reset results UI
-  function resetResults() {
-    resultsBody.innerHTML = '';
-    progressBar.style.width = '0';
-    statusMessage.textContent = '';
-    statusMessage.className = 'status-message';
-  }
-
-  // Clear form fields
-  function clearForm() {
-    jsonFileInput.value = '';
+  async function handleSubmitAll() {
+    closeModal();
     resetResults();
-    processedGames = [];
-    gamePreviewContainer.classList.add('hidden');
-    currentPage = 1; // Reset pagination
-    
-    // Only clear credentials if not saving them
-    if (!saveCredentialsCheckbox.checked) {
-      supabaseUrlInput.value = '';
-      supabaseKeyInput.value = '';
+    updateStatus(`Starting import of ${processedGames.length} games…`, "info");
+    try {
+      const res = await fetch(`${API}/api/import/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ games: processedGames }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start import");
+      activeImportId = data.importId;
+      subscribeToProgress(activeImportId);
+    } catch (err) {
+      updateStatus(`Import error: ${err.message}`, "error");
     }
   }
 
-  // --- Manual Entry Functions ---
+  function subscribeToProgress(importId) {
+    if (activeEventSource) activeEventSource.close();
+    const es = new EventSource(`${API}/api/import/${importId}/progress`);
+    activeEventSource = es;
 
+    es.addEventListener("snapshot", (e) => handleProgressEvent(JSON.parse(e.data), false));
+    es.addEventListener("progress", (e) => handleProgressEvent(JSON.parse(e.data), false));
+    es.addEventListener("batch_error", (e) => {
+      const info = JSON.parse(e.data);
+      addResultRow(false, `Batch ${info.batchIndex}`, "—", info.error);
+    });
+    es.addEventListener("done", (e) => {
+      handleProgressEvent(JSON.parse(e.data), true);
+      es.close();
+      activeEventSource = null;
+      if (downloadFailedBtn) downloadFailedBtn.disabled = false;
+    });
+    es.onerror = () => {
+      es.close();
+      activeEventSource = null;
+    };
+  }
+
+  function handleProgressEvent(snap, isFinal) {
+    updateProgressBar(snap.pctComplete || 0);
+    const msg = isFinal
+      ? `Import ${snap.status}: ${snap.succeeded} succeeded, ${snap.failed} failed (of ${snap.total})`
+      : `Importing… ${snap.processed}/${snap.total} (${snap.succeeded} ok, ${snap.failed} failed)`;
+    updateStatus(msg, snap.failed > 0 && isFinal ? "warning" : "info");
+  }
+
+  function downloadFailedGames() {
+    if (!activeImportId) {
+      updateStatus("No active import to export.", "warning");
+      return;
+    }
+    window.open(`${API}/api/import/${activeImportId}/failed`, "_blank");
+  }
+
+  /* ---------- manual entry ---------- */
   function getManualGameData() {
     return {
-        provider_game_id: document.getElementById('manual_provider_game_id').value,
-        title: document.getElementById('manual_title').value,
-        description: document.getElementById('manual_description').value,
-        instructions: document.getElementById('manual_instructions').value,
-        slug: generateSlug(document.getElementById('manual_title').value),
-        category: document.getElementById('manual_category').value,
-        main_category: document.getElementById('manual_main_category').value,
-        tags: document.getElementById('manual_tags').value,
-        orientation: determineOrientation(document.getElementById('manual_width').value, document.getElementById('manual_height').value),
-        quality_score: null, // Not available in manual entry
-        width: document.getElementById('manual_width').value,
-        height: document.getElementById('manual_height').value,
-        date_modified: new Date().toISOString(),
-        date_published: new Date().toISOString(),
-        banner_image: null, // Not available in manual entry
-        thumbnail_image: document.getElementById('manual_thumbnail_image').value,
-        play_url: document.getElementById('manual_play_url').value,
-        provider: document.getElementById('manual_provider').value,
-        play_count: 0,
-        is_featured: document.getElementById('manual_is_featured').checked,
-        is_new: true
+      provider_game_id: $("manual_provider_game_id")?.value.trim() || "",
+      title: $("manual_title")?.value.trim() || "",
+      description: $("manual_description")?.value || "",
+      instructions: $("manual_instructions")?.value || "",
+      slug: slugify($("manual_title")?.value || ""),
+      category: $("manual_category")?.value.trim() || "Uncategorized",
+      main_category: $("manual_main_category")?.value || MAIN_CATEGORIES[0],
+      tags: $("manual_tags")?.value || "",
+      orientation: determineOrientation(
+        $("manual_width")?.value,
+        $("manual_height")?.value,
+      ),
+      quality_score: null,
+      width: Number($("manual_width")?.value) || 800,
+      height: Number($("manual_height")?.value) || 600,
+      date_modified: new Date().toISOString(),
+      date_published: new Date().toISOString(),
+      banner_image: null,
+      thumbnail_image: $("manual_thumbnail_image")?.value.trim() || "",
+      play_url: $("manual_play_url")?.value.trim() || "",
+      provider: $("manual_provider")?.value.trim() || "manual",
+      is_featured: !!$("manual_is_featured")?.checked,
+      is_new: true,
     };
   }
 
   function validateManualInputs(game) {
-    if (!game.title || !game.play_url || !game.provider_game_id) {
-      updateStatus('Title, Play URL, and Provider Game ID are required for manual entry.', 'error');
+    if (!game.title) {
+      updateStatus("Manual entry: Title is required.", "error");
       return false;
     }
-    if (!supabaseUrlInput.value || !supabaseKeyInput.value) {
-      updateStatus('Supabase URL and API key are required', 'error');
+    if (!game.play_url) {
+      updateStatus("Manual entry: Play URL is required.", "error");
+      return false;
+    }
+    if (!game.provider_game_id) {
+      updateStatus("Manual entry: Provider Game ID is required.", "error");
+      return false;
+    }
+    if (!game.provider) {
+      updateStatus("Manual entry: Provider is required.", "error");
       return false;
     }
     return true;
@@ -967,205 +572,362 @@ const mainCategories = [
 
   async function handleManualStore() {
     const game = getManualGameData();
-
-    if (!validateManualInputs(game)) {
-      return;
-    }
-
-    manualStoreBtn.disabled = true;
-    manualStoreBtn.textContent = 'Storing...';
-
-    saveCredentials();
-    initSupabase();
-
-    updateStatus('Storing game...', 'info');
-    resetResults();
-
+    if (!validateManualInputs(game)) return;
+    updateStatus("Submitting manual game…", "info");
     try {
-        await importGamesToSupabase([game], game.provider);
-    } catch (error) {
-        updateStatus(`An unexpected error occurred: ${error.message}`, 'error');
-    } finally {
-        manualStoreBtn.disabled = false;
-        manualStoreBtn.textContent = 'Store';
+      const res = await fetch(`${API}/api/import/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ games: [game] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Manual import failed");
+      activeImportId = data.importId;
+      subscribeToProgress(activeImportId);
+    } catch (err) {
+      updateStatus(`Manual import failed: ${err.message}`, "error");
     }
   }
 
   function handleManualPreview() {
     const game = getManualGameData();
-
-    if (!game.title || !game.play_url) {
-        updateStatus('Title and Play URL are required for a preview.', 'error');
-        return;
-    }
-
-    localStorage.setItem('manualGamePreview', JSON.stringify(game));
-    window.open('preview.html', '_blank');
+    if (!validateManualInputs(game)) return;
+    processedGames = [game];
+    unfilteredGames = [game];
+    currentPage = 1;
+    renderGamesList();
+    updateStatus("Previewing manual game.", "info");
   }
 
   function clearManualForm() {
-    document.getElementById('manual_title').value = '';
-    document.getElementById('manual_description').value = '';
-    document.getElementById('manual_instructions').value = '';
-    document.getElementById('manual_play_url').value = '';
-    document.getElementById('manual_category').value = '';
-    document.getElementById('manual_main_category').value = 'New Releases';
-    document.getElementById('manual_tags').value = '';
-    document.getElementById('manual_width').value = '800';
-    document.getElementById('manual_height').value = '600';
-    document.getElementById('manual_thumbnail_image').value = '';
-    document.getElementById('manual_provider').value = 'manual';
-    document.getElementById('manual_provider_game_id').value = '';
-    document.getElementById('manual_is_featured').checked = false;
+    [
+      "manual_provider_game_id",
+      "manual_title",
+      "manual_description",
+      "manual_instructions",
+      "manual_category",
+      "manual_tags",
+      "manual_width",
+      "manual_height",
+      "manual_thumbnail_image",
+      "manual_play_url",
+      "manual_provider",
+    ].forEach((id) => {
+      const el = $(id);
+      if (el) el.value = "";
+    });
+    const ft = $("manual_is_featured");
+    if (ft) ft.checked = false;
     resetResults();
   }
 
-  // --- Duplicate Games Functions ---
-  async function checkDuplicateGames() {
-    if (processedGames.length === 0) {
-      updateStatus('No games to check for duplicates.', 'error');
-      return;
-    }
+  /* ---------- list render (lazy iframe) ---------- */
+  function renderGamesList() {
+    if (!gamesList) return;
+    gamesList.innerHTML = "";
+    gamePreviewContainer.classList.remove("hidden");
 
-    updateStatus('Checking for duplicate games...', 'info');
-    initSupabase(); // Ensure Supabase client is initialized
+    const totalGames = processedGames.length;
+    const totalPages = Math.max(1, Math.ceil(totalGames / gamesPerPage));
+    if (gamesCounter) gamesCounter.textContent = `${totalGames} games loaded`;
 
-    const duplicateFound = [];
+    if (currentPage > totalPages) currentPage = totalPages;
+    const startIdx = (currentPage - 1) * gamesPerPage;
+    const endIdx = Math.min(startIdx + gamesPerPage, totalGames);
+    const slice = processedGames.slice(startIdx, endIdx);
 
-    for (const game of processedGames) {
-      try {
-        const { data: existingGames, error } = await supabaseClient
-          .from('games')
-          .select('id, title, provider, provider_game_id')
-          .or(`provider_game_id.eq.${game.provider_game_id},title.eq.${game.title}`)
-          .limit(1);
-
-        if (error) {
-          throw new Error(`Supabase query error: ${error.message}`);
-        }
-
-        if (existingGames && existingGames.length > 0) {
-          duplicateFound.push({
-            localGame: game,
-            existingGame: existingGames[0]
-          });
-        }
-      } catch (err) {
-        console.error('Error checking for duplicate:', err);
-        updateStatus(`Error checking duplicates: ${err.message}`, 'error');
-        return;
-      }
-    }
-
-    if (duplicateFound.length > 0) {
-      displayDuplicateModal(duplicateFound);
-      updateStatus(`${duplicateFound.length} duplicate(s) found.`, 'warning');
-    } else {
-      updateStatus('No duplicate games found.', 'success');
-    }
-  }
-
-  function displayDuplicateModal(duplicates) {
-    duplicateGameList.innerHTML = ''; // Clear previous duplicates
-
-    duplicates.forEach((dup, index) => {
-      const dupItem = document.createElement('div');
-      dupItem.className = 'duplicate-game-item';
-      dupItem.dataset.index = index; // Store index for removal
-
-      const title = document.createElement('h3');
-      title.textContent = dup.localGame.title;
-
-      const details = document.createElement('p');
-      details.innerHTML = `<strong>Provider:</strong> ${dup.localGame.provider}<br>
-                           <strong>Provider Game ID:</strong> ${dup.localGame.provider_game_id}<br>
-                           <strong>Existing Supabase ID:</strong> ${dup.existingGame.id}<br>
-                           <strong>Existing Supabase Title:</strong> ${dup.existingGame.title}`;
-      
-      const removeBtn = document.createElement('button');
-      removeBtn.className = 'remove-duplicate-btn';
-      removeBtn.textContent = 'Remove This Duplicate';
-      removeBtn.addEventListener('click', () => removeSingleDuplicate(index));
-
-      dupItem.appendChild(title);
-      dupItem.appendChild(details);
-      dupItem.appendChild(removeBtn);
-      duplicateGameList.appendChild(dupItem);
+    slice.forEach((game, idx) => {
+      gamesList.appendChild(renderGameCard(game, startIdx + idx));
     });
 
-    duplicateModal.style.display = 'block';
+    updatePaginationControls(totalPages);
   }
 
-  function removeSingleDuplicate(indexToRemove) {
-    // Remove the game from processedGames that corresponds to the duplicate entry
-    // This requires finding the original game in processedGames based on the duplicate info
-    const duplicateEntry = duplicateGameList.children[indexToRemove];
-    const localGameTitle = duplicateEntry.querySelector('h3').textContent;
-    const localGameProviderId = duplicateEntry.querySelector('p').innerHTML.split('<strong>Provider Game ID:</strong> ')[1].split('<br>')[0];
+  function renderGameCard(game, originalIndex) {
+    const card = document.createElement("div");
+    card.className = "game-item";
+    card.dataset.index = String(originalIndex);
 
-    const originalIndexInProcessedGames = processedGames.findIndex(game => 
-        game.title === localGameTitle && game.provider_game_id === localGameProviderId
+    const previewBox = document.createElement("div");
+    previewBox.className = "game-iframe-container";
+    previewBox.style.position = "relative";
+
+    const thumb = document.createElement("img");
+    thumb.src = game.thumbnail_image || "";
+    thumb.alt = game.title || "";
+    thumb.loading = "lazy";
+    thumb.style.width = "100%";
+    thumb.style.height = "100%";
+    thumb.style.objectFit = "cover";
+    thumb.onerror = () => {
+      thumb.style.background = "#222";
+      thumb.alt = "(no thumbnail)";
+    };
+    previewBox.appendChild(thumb);
+
+    const playOverlay = document.createElement("button");
+    playOverlay.type = "button";
+    playOverlay.textContent = "▶ Preview game";
+    playOverlay.className = "preview-overlay";
+    playOverlay.addEventListener("click", () => {
+      previewBox.innerHTML = "";
+      const iframe = document.createElement("iframe");
+      iframe.className = "game-iframe";
+      iframe.src = game.play_url;
+      iframe.setAttribute("allowfullscreen", "true");
+      iframe.style.width = "100%";
+      iframe.style.height = "100%";
+      iframe.style.border = "0";
+      previewBox.appendChild(iframe);
+    });
+    previewBox.appendChild(playOverlay);
+
+    card.appendChild(previewBox);
+
+    const details = document.createElement("div");
+    details.className = "game-details";
+
+    details.appendChild(labeledInput("Title:", game.title, (v) => update(originalIndex, "title", v)));
+    details.appendChild(
+      labeledTextarea("Description:", game.description, (v) => update(originalIndex, "description", v), 4),
+    );
+    details.appendChild(
+      labeledTextarea("Instructions:", game.instructions || "", (v) => update(originalIndex, "instructions", v), 3),
     );
 
-    if (originalIndexInProcessedGames !== -1) {
-        processedGames.splice(originalIndexInProcessedGames, 1);
-        updateStatus(`Removed "${localGameTitle}" from upload list.`, 'info');
-    } else {
-        console.warn(`Could not find game to remove: ${localGameTitle}`);
-    }
+    const more = document.createElement("div");
+    more.className = "additional-details";
+    more.appendChild(labeledInput("Category:", game.category, (v) => update(originalIndex, "category", v)));
+    more.appendChild(
+      labeledSelect("Main Category:", MAIN_CATEGORIES, game.main_category, (v) =>
+        update(originalIndex, "main_category", v),
+      ),
+    );
+    more.appendChild(labeledInput("Tags:", game.tags, (v) => update(originalIndex, "tags", v)));
 
-    // Re-render the duplicate modal with remaining duplicates
-    // Fetch current duplicates again to ensure consistency
-    const remainingDuplicates = [];
-    const currentDuplicateItems = duplicateGameList.children;
-    for (let i = 0; i < currentDuplicateItems.length; i++) {
-        if (i !== indexToRemove) {
-            // Reconstruct the duplicate object (simplified, could be improved with better data storage)
-            const title = currentDuplicateItems[i].querySelector('h3').textContent;
-            const providerId = currentDuplicateItems[i].querySelector('p').innerHTML.split('<strong>Provider Game ID:</strong> ')[1].split('<br>')[0];
-            const existingId = currentDuplicateItems[i].querySelector('p').innerHTML.split('<strong>Existing Supabase ID:</strong> ')[1].split('<br>')[0];
-            const existingTitle = currentDuplicateItems[i].querySelector('p').innerHTML.split('<strong>Existing Supabase Title:</strong> ')[1];
+    const dims = document.createElement("div");
+    dims.className = "dimensions-container";
+    dims.appendChild(labeledInputSmall("Width:", game.width, (v) => update(originalIndex, "width", Number(v) || 0)));
+    dims.appendChild(labeledInputSmall("Height:", game.height, (v) => update(originalIndex, "height", Number(v) || 0)));
+    more.appendChild(dims);
 
-            remainingDuplicates.push({
-                localGame: { title: title, provider_game_id: providerId },
-                existingGame: { id: existingId, title: existingTitle }
-            });
-        }
-    }
-    
-    if (remainingDuplicates.length > 0) {
-        displayDuplicateModal(remainingDuplicates);
-    } else {
-        closeDuplicateModal();
-        updateStatus('All duplicates removed from the upload list.', 'success');
-    }
-    renderGamesList(); // Re-render the main game list to reflect removal
+    more.appendChild(labeledCheckbox("Featured:", !!game.is_featured, (v) => update(originalIndex, "is_featured", v)));
+    more.appendChild(labeledInput("Game URL:", game.play_url, (v) => update(originalIndex, "play_url", v)));
+    more.appendChild(labeledInput("Thumbnail URL:", game.thumbnail_image, (v) => update(originalIndex, "thumbnail_image", v)));
+
+    details.appendChild(more);
+
+    const actions = document.createElement("div");
+    actions.className = "game-actions";
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "remove-game-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", () => removeGame(originalIndex));
+    actions.appendChild(removeBtn);
+    details.appendChild(actions);
+
+    card.appendChild(details);
+    return card;
   }
 
-  function removeAllDuplicateGames() {
-    // Collect all provider_game_id and titles from the duplicate list
-    const duplicatesToRemove = [];
-    const duplicateItems = duplicateGameList.children;
-    for (let i = 0; i < duplicateItems.length; i++) {
-        const title = duplicateItems[i].querySelector('h3').textContent;
-        const providerId = duplicateItems[i].querySelector('p').innerHTML.split('<strong>Provider Game ID:</strong> ')[1].split('<br>')[0];
-        duplicatesToRemove.push({ title: title, provider_game_id: providerId });
-    }
+  function update(index, field, value) {
+    if (processedGames[index]) processedGames[index][field] = value;
+  }
 
-    // Filter out games from processedGames that are in the duplicatesToRemove list
-    processedGames = processedGames.filter(game => {
-        return !duplicatesToRemove.some(dup => 
-            dup.title === game.title && dup.provider_game_id === game.provider_game_id
-        );
+  function removeGame(index) {
+    processedGames.splice(index, 1);
+    renderGamesList();
+  }
+
+  function labeledInput(label, value, onChange) {
+    const wrap = document.createElement("div");
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    lab.className = "detail-label";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "game-title-input";
+    inp.value = value ?? "";
+    inp.addEventListener("change", (e) => onChange(e.target.value));
+    wrap.append(lab, inp);
+    return wrap;
+  }
+
+  function labeledTextarea(label, value, onChange, rows = 3) {
+    const wrap = document.createElement("div");
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    lab.className = "detail-label";
+    const ta = document.createElement("textarea");
+    ta.className = "game-description";
+    ta.rows = rows;
+    ta.value = value ?? "";
+    ta.addEventListener("change", (e) => onChange(e.target.value));
+    wrap.append(lab, ta);
+    return wrap;
+  }
+
+  function labeledSelect(label, options, value, onChange) {
+    const wrap = document.createElement("div");
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    lab.className = "detail-label";
+    const sel = document.createElement("select");
+    sel.className = "detail-select";
+    options.forEach((opt) => {
+      const o = document.createElement("option");
+      o.value = opt;
+      o.textContent = opt;
+      if (opt === value) o.selected = true;
+      sel.appendChild(o);
     });
-
-    updateStatus(`Removed ${duplicatesToRemove.length} duplicate games from the upload list.`, 'info');
-    closeDuplicateModal();
-    renderGamesList(); // Re-render the main game list to reflect removal
+    sel.addEventListener("change", (e) => onChange(e.target.value));
+    wrap.append(lab, sel);
+    return wrap;
   }
 
-  function closeDuplicateModal() {
-    duplicateModal.style.display = 'none';
+  function labeledInputSmall(label, value, onChange) {
+    const wrap = document.createElement("div");
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    lab.className = "detail-label-small";
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.className = "detail-input-small";
+    inp.value = value ?? "";
+    inp.addEventListener("change", (e) => onChange(e.target.value));
+    wrap.append(lab, inp);
+    return wrap;
   }
 
+  function labeledCheckbox(label, checked, onChange) {
+    const wrap = document.createElement("div");
+    wrap.className = "featured-container";
+    const lab = document.createElement("label");
+    lab.textContent = label;
+    lab.className = "detail-label";
+    const inp = document.createElement("input");
+    inp.type = "checkbox";
+    inp.className = "detail-checkbox";
+    inp.checked = !!checked;
+    inp.addEventListener("change", (e) => onChange(e.target.checked));
+    wrap.append(lab, inp);
+    return wrap;
+  }
+
+  /* ---------- pagination ---------- */
+  function updatePaginationControls(totalPages) {
+    if (pageInfo) pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    if (pageInfoBottom) pageInfoBottom.textContent = `Page ${currentPage} of ${totalPages}`;
+    if (prevPageBtn) prevPageBtn.disabled = currentPage === 1;
+    if (prevPageBtnBottom) prevPageBtnBottom.disabled = currentPage === 1;
+    if (nextPageBtn) nextPageBtn.disabled = currentPage === totalPages || totalPages === 0;
+    if (nextPageBtnBottom)
+      nextPageBtnBottom.disabled = currentPage === totalPages || totalPages === 0;
+    document.querySelectorAll(".pagination-controls").forEach((el) => {
+      if (totalPages <= 1) el.classList.add("hidden");
+      else el.classList.remove("hidden");
+    });
+  }
+
+  function changePage(direction) {
+    const totalPages = Math.ceil(processedGames.length / gamesPerPage);
+    currentPage = Math.max(1, Math.min(totalPages, currentPage + direction));
+    renderGamesList();
+  }
+
+  function changePageSize() {
+    gamesPerPage = parseInt(pageSizeSelect.value);
+    currentPage = 1;
+    renderGamesList();
+  }
+
+  /* ---------- validation + ui plumbing ---------- */
+  function validateInputs() {
+    if (!jsonFileInput?.files?.[0]) {
+      updateStatus("Choose a JSON file.", "error");
+      return false;
+    }
+    return true;
+  }
+
+  function addResultRow(success, title, provider, message) {
+    if (!resultsBody) return;
+    const row = document.createElement("tr");
+    [
+      [success ? "Success" : "Failed", success ? "success" : "error"],
+      [title, ""],
+      [provider, ""],
+      [message, ""],
+    ].forEach(([text, cls]) => {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (cls) td.className = cls;
+      row.appendChild(td);
+    });
+    resultsBody.appendChild(row);
+  }
+
+  function updateProgressBar(percentage) {
+    if (progressBar) progressBar.style.width = `${percentage}%`;
+  }
+
+  function updateStatus(message, type) {
+    if (!statusMessage) return;
+    statusMessage.textContent = message;
+    statusMessage.className = `status-message ${type || ""}`;
+    console.log(`[${type || "info"}] ${message}`);
+  }
+
+  function resetResults() {
+    if (resultsBody) resultsBody.innerHTML = "";
+    if (progressBar) progressBar.style.width = "0";
+    if (statusMessage) {
+      statusMessage.textContent = "";
+      statusMessage.className = "status-message";
+    }
+    if (downloadFailedBtn) downloadFailedBtn.disabled = true;
+  }
+
+  function clearForm() {
+    if (jsonFileInput) jsonFileInput.value = "";
+    resetResults();
+    processedGames = [];
+    unfilteredGames = [];
+    activeImportId = null;
+    if (activeEventSource) {
+      activeEventSource.close();
+      activeEventSource = null;
+    }
+    gamePreviewContainer.classList.add("hidden");
+    currentPage = 1;
+  }
+
+  /* ---------- helpers ---------- */
+  function slugify(input) {
+    if (!input) return "";
+    return input
+      .toString()
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/[\s_-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+  function determineOrientation(width, height) {
+    const w = Number(width);
+    const h = Number(height);
+    if (!w || !h) return "landscape";
+    return w >= h ? "landscape" : "portrait";
+  }
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/`/g, "&#96;");
+  }
 });

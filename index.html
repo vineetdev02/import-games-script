@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Game Data Importer</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -371,9 +370,11 @@
         <div class="provider-selector">
           <label for="provider">Select Provider:</label>
           <select id="provider" name="provider">
+            <option value="auto" selected>Auto-detect from file</option>
             <option value="gamemonitize">GameMonitize</option>
             <option value="gamepix">GamePix</option>
           </select>
+          <p class="muted-note">Auto-detect inspects the JSON shape. Choose a specific provider only if auto-detect picks wrong.</p>
         </div>
 
         <div id="mainCategoryContainer" class="category-selector">
@@ -392,43 +393,91 @@
       </div>
 
       <div id="manualEntryForm" class="hidden">
-        <div class="form-group">
-          <label for="manual_title">Title:</label>
-          <input type="text" id="manual_title" name="manual_title">
-        </div>
-        <div class="form-group">
-          <label for="manual_main_category">Main Category:</label>
-          <select id="manual_main_category" name="manual_main_category">
-            <!-- Options will be generated here by JavaScript -->
-          </select>
-        </div>
-        <div class="form-group">
-          <label for="manual_description">Description:</label>
-          <textarea id="manual_description" name="manual_description" rows="3"></textarea>
-        </div>
-        <div class="form-group">
-          <label for="manual_play_url">Play URL:</label>
-          <input type="text" id="manual_play_url" name="manual_play_url">
+        <div class="manual-grid">
+          <div class="form-group">
+            <label for="manual_title">Title <span class="required">*</span></label>
+            <input type="text" id="manual_title" name="manual_title">
+          </div>
+          <div class="form-group">
+            <label for="manual_provider">Provider <span class="required">*</span></label>
+            <input type="text" id="manual_provider" name="manual_provider" placeholder="e.g. gamemonitize, gamepix, manual">
+          </div>
+          <div class="form-group">
+            <label for="manual_provider_game_id">Provider Game ID <span class="required">*</span></label>
+            <input type="text" id="manual_provider_game_id" name="manual_provider_game_id">
+          </div>
+          <div class="form-group">
+            <label for="manual_main_category">Main Category</label>
+            <select id="manual_main_category" name="manual_main_category">
+              <!-- populated by script -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="manual_category">Sub-category</label>
+            <input type="text" id="manual_category" name="manual_category" placeholder="e.g. Action, Puzzle">
+          </div>
+          <div class="form-group">
+            <label for="manual_tags">Tags (comma-separated)</label>
+            <input type="text" id="manual_tags" name="manual_tags" placeholder="2D, Survival, Casual">
+          </div>
+          <div class="form-group">
+            <label for="manual_width">Width (px)</label>
+            <input type="number" id="manual_width" name="manual_width" placeholder="800">
+          </div>
+          <div class="form-group">
+            <label for="manual_height">Height (px)</label>
+            <input type="number" id="manual_height" name="manual_height" placeholder="600">
+          </div>
+          <div class="form-group full-width">
+            <label for="manual_play_url">Play URL <span class="required">*</span></label>
+            <input type="text" id="manual_play_url" name="manual_play_url" placeholder="https://...">
+          </div>
+          <div class="form-group full-width">
+            <label for="manual_thumbnail_image">Thumbnail URL</label>
+            <input type="text" id="manual_thumbnail_image" name="manual_thumbnail_image" placeholder="https://...">
+          </div>
+          <div class="form-group full-width">
+            <label for="manual_description">Description</label>
+            <textarea id="manual_description" name="manual_description" rows="3"></textarea>
+          </div>
+          <div class="form-group full-width">
+            <label for="manual_instructions">Instructions / How to play</label>
+            <textarea id="manual_instructions" name="manual_instructions" rows="2"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-inline">
+              <input type="checkbox" id="manual_is_featured"> Featured
+            </label>
+          </div>
         </div>
         <div class="buttons">
-          <button id="manualStoreBtn" type="button">Store</button>
+          <button id="manualPreviewBtn" type="button">Preview</button>
+          <button id="manualStoreBtn" type="button">Store to Supabase</button>
           <button id="manualClearBtn" type="button">Clear</button>
         </div>
       </div>
       
-      <div class="supabase-config">
-        <h3>Supabase Configuration</h3>
+      <div class="server-config">
+        <h3>Server</h3>
+        <p id="serverStatus" class="status-pending">Pinging server…</p>
+        <p class="muted-note">
+          Credentials live in <code>server/.env</code> on this machine. They are never sent to the browser.
+          To change them, edit that file and restart the server.
+        </p>
+      </div>
+
+      <div class="filters-config">
+        <h3>Filters (optional)</h3>
         <div class="form-group">
-          <label for="supabaseUrl">Supabase URL:</label>
-          <input type="text" id="supabaseUrl" name="supabaseUrl" placeholder="https://your-project.supabase.co" value="https://bxpuvwltmwyhcpbllutl.supabase.co">
+          <label for="filterQuality">Min quality score (GamePix only):</label>
+          <input type="number" id="filterQuality" min="0" max="1" step="0.05" placeholder="e.g. 0.7">
         </div>
         <div class="form-group">
-          <label for="supabaseKey">Supabase Anon Key:</label>
-          <input type="password" id="supabaseKey" name="supabaseKey" placeholder="your-anon-key" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4cHV2d2x0bXd5aGNwYmxsdXRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MjQ4NzEwNiwiZXhwIjoyMDU4MDYzMTA2fQ.fwo9dwbYaPf-OrmQWHL4nGeMmvaVIxGnEcqR4-DoVFs">
+          <input type="checkbox" id="filterRequireThumb">
+          <label for="filterRequireThumb">Require thumbnail URL</label>
         </div>
-        <div class="form-group">
-          <input type="checkbox" id="saveCredentials" name="saveCredentials" checked>
-          <label for="saveCredentials">Remember credentials</label>
+        <div class="buttons">
+          <button id="applyFiltersBtn" type="button">Apply Filters</button>
         </div>
       </div>
     </div>
@@ -472,6 +521,9 @@
         <div id="progressBar" class="progress-bar"></div>
       </div>
       <div id="statusMessage" class="status-message"></div>
+      <div class="buttons" style="margin-top: 0.75rem;">
+        <button id="downloadFailedBtn" type="button" disabled>Download failed games (JSON)</button>
+      </div>
       <div id="results" class="results">
         <table id="resultsTable" class="results-table">
           <thead>
@@ -512,463 +564,22 @@
       </div>
       <div class="modal-body">
         <p>The following games already exist in the database:</p>
+        <div class="duplicate-toolbar">
+          <label class="select-all-label">
+            <input type="checkbox" id="selectAllDuplicates"> Select all
+          </label>
+          <span id="duplicateSelectionCount" class="muted-note">0 selected</span>
+        </div>
         <div id="duplicateGameList" class="duplicate-game-list"></div>
       </div>
       <div class="modal-footer">
-        <button id="removeAllDuplicatesBtn" type="button">Remove All Duplicates</button>
+        <button id="removeSelectedDuplicatesBtn" type="button">Remove Selected</button>
+        <button id="removeAllDuplicatesBtn" type="button">Remove All</button>
         <button id="closeDuplicateModalBtn" type="button">Close</button>
       </div>
     </div>
   </div>
 
-  <script>
-    document.addEventListener('DOMContentLoaded', () => {
-      // --- DOM ELEMENTS (Complete List) ---
-      const providerSelect = document.getElementById('provider');
-      const jsonFileInput = document.getElementById('jsonFile');
-      const supabaseUrlInput = document.getElementById('supabaseUrl');
-      const supabaseKeyInput = document.getElementById('supabaseKey');
-      const saveCredentialsCheckbox = document.getElementById('saveCredentials');
-      const importBtn = document.getElementById('importBtn');
-      const clearBtn = document.getElementById('clearBtn');
-      const progressBar = document.getElementById('progressBar');
-      const statusMessage = document.getElementById('statusMessage');
-      const resultsBody = document.getElementById('resultsBody');
-      const gamePreviewContainer = document.getElementById('gamePreviewContainer');
-      const gamesList = document.getElementById('gamesList');
-      const submitAllBtn = document.getElementById('submitAllBtn');
-      const confirmationModal = document.getElementById('confirmationModal');
-      const modalGameList = document.getElementById('modalGameList');
-      const confirmUploadBtn = document.getElementById('confirmUploadBtn');
-      const cancelUploadBtn = document.getElementById('cancelUploadBtn');
-      const closeModalBtn = document.querySelector('.close');
-      const jsonModeRadio = document.getElementById('jsonMode');
-      const manualModeRadio = document.getElementById('manualMode');
-      const jsonImportForm = document.getElementById('jsonImportForm');
-      const manualEntryForm = document.getElementById('manualEntryForm');
-      const manualStoreBtn = document.getElementById('manualStoreBtn');
-      const manualClearBtn = document.getElementById('manualClearBtn');
-      const prevPageBtn = document.getElementById('prevPageBtn');
-      const nextPageBtn = document.getElementById('nextPageBtn');
-      const pageInfo = document.getElementById('pageInfo');
-      const pageSizeSelect = document.getElementById('pageSize');
-      const gamesCounter = document.getElementById('gamesCounter');
-      const prevPageBtnBottom = document.getElementById('prevPageBtnBottom');
-      const nextPageBtnBottom = document.getElementById('nextPageBtnBottom');
-      const pageInfoBottom = document.getElementById('pageInfoBottom');
-      const duplicateModal = document.getElementById('duplicateModal');
-      const duplicateGameList = document.getElementById('duplicateGameList');
-      const removeAllDuplicatesBtn = document.getElementById('removeAllDuplicatesBtn');
-      const closeDuplicateModalBtn = document.getElementById('closeDuplicateModalBtn');
-      const closeDuplicateModalBtnTop = document.querySelector('.close-duplicate');
-      const checkDuplicatesBtn = document.getElementById('checkDuplicatesBtn');
-
-      // --- STATE & CONFIG ---
-      let supabaseClient = null;
-      let processedGames = [];
-      let currentPage = 1;
-      let gamesPerPage = parseInt(pageSizeSelect.value);
-
-      const mainCategories = [
-        "New Releases", "Trending Now", "Most Played",
-        "Featured Games", "Banner Games", "Editor's Choice", "All Action Games"
-      ];
-
-      // --- INITIALIZATION ---
-      loadSavedCredentials();
-      populateCategorySelectors();
-
-      // --- EVENT LISTENERS ---
-      importBtn.addEventListener('click', handleImport);
-      clearBtn.addEventListener('click', clearForm);
-      submitAllBtn.addEventListener('click', showConfirmationModal);
-      confirmUploadBtn.addEventListener('click', handleSubmitAll);
-      cancelUploadBtn.addEventListener('click', closeModal);
-      closeModalBtn.addEventListener('click', closeModal);
-      jsonModeRadio.addEventListener('change', toggleImportMode);
-      manualModeRadio.addEventListener('change', toggleImportMode);
-      manualStoreBtn.addEventListener('click', handleManualStore);
-      manualClearBtn.addEventListener('click', clearManualForm);
-      prevPageBtn.addEventListener('click', () => changePage(-1));
-      nextPageBtn.addEventListener('click', () => changePage(1));
-      pageSizeSelect.addEventListener('change', changePageSize);
-      prevPageBtnBottom.addEventListener('click', () => changePage(-1));
-      nextPageBtnBottom.addEventListener('click', () => changePage(1));
-      checkDuplicatesBtn.addEventListener('click', checkDuplicateGames);
-      removeAllDuplicatesBtn.addEventListener('click', removeAllDuplicateGames);
-      closeDuplicateModalBtn.addEventListener('click', closeDuplicateModal);
-      closeDuplicateModalBtnTop.addEventListener('click', closeDuplicateModal);
-      window.addEventListener('click', (event) => {
-        if (event.target === confirmationModal) closeModal();
-        if (event.target === duplicateModal) closeDuplicateModal();
-      });
-
-      // --- FUNCTIONS ---
-
-      function populateCategorySelectors() {
-        const jsonImportContainer = document.getElementById('mainCategoryContainer');
-        const manualSelect = document.getElementById('manual_main_category');
-        let radioHtml = '<label>Select Main Category:</label><div class="radio-grid">';
-        mainCategories.forEach((category, index) => {
-            const id = `cat_radio_${index}`;
-            radioHtml += `<div class="radio-item"><input type="radio" id="${id}" name="mainCategory" value="${category}" ${index === 0 ? 'checked' : ''}><label for="${id}">${category}</label></div>`;
-        });
-        radioHtml += '</div>';
-        jsonImportContainer.innerHTML = radioHtml;
-        manualSelect.innerHTML = mainCategories.map(c => `<option value="${c}">${c}</option>`).join('');
-      }
-
-      function toggleImportMode() {
-        manualEntryForm.classList.toggle('hidden', !manualModeRadio.checked);
-        jsonImportForm.classList.toggle('hidden', manualModeRadio.checked);
-      }
-
-      function loadSavedCredentials() {
-        supabaseUrlInput.value = localStorage.getItem('supabaseUrl') || 'https://bxpuvwltmwyhcpbllutl.supabase.co';
-        supabaseKeyInput.value = localStorage.getItem('supabaseKey') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ4cHV2d2x0bXd5aGNwYmxsdXRsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0MjQ4NzEwNiwiZXhwIjoyMDU4MDYzMTA2fQ.fwo9dwbYaPf-OrmQWHL4nGeMmvaVIxGnEcqR4-DoVFs';
-        saveCredentialsCheckbox.checked = !!localStorage.getItem('supabaseUrl');
-      }
-
-      function saveCredentials() {
-        if (saveCredentialsCheckbox.checked) {
-          localStorage.setItem('supabaseUrl', supabaseUrlInput.value);
-          localStorage.setItem('supabaseKey', supabaseKeyInput.value);
-        } else {
-          localStorage.removeItem('supabaseUrl');
-          localStorage.removeItem('supabaseKey');
-        }
-      }
-
-      async function handleImport() {
-        try {
-          if (!validateInputs()) return;
-          saveCredentials();
-          initSupabase();
-
-          const file = jsonFileInput.files[0];
-          const provider = providerSelect.value;
-          const mainCategory = document.querySelector('input[name="mainCategory"]:checked').value;
-
-          resetResults();
-          updateStatus('Reading file...', 'info');
-          
-          const fileContent = await readFileAsJson(file);
-          if (!fileContent) throw new Error('Failed to read or parse JSON file.');
-
-          let games = provider === 'gamemonitize' ? processGamemonitizeData(fileContent, mainCategory) : processGamepixData(fileContent, mainCategory);
-          if (games.length === 0) throw new Error('No valid games found in the file.');
-
-          updateStatus(`Found ${games.length} games. Ready for review.`, 'success');
-          processedGames = games;
-          currentPage = 1;
-          renderGamesList();
-
-        } catch (error) {
-          console.error('Import error:', error);
-          updateStatus(`Error: ${error.message}`, 'error');
-        }
-      }
-      
-      function renderGamesList() {
-        gamesList.innerHTML = '';
-        gamePreviewContainer.classList.remove('hidden');
-
-        const totalGames = processedGames.length;
-        const totalPages = Math.ceil(totalGames / gamesPerPage);
-        gamesCounter.textContent = `${totalGames} games loaded`;
-
-        const startIndex = (currentPage - 1) * gamesPerPage;
-        const endIndex = Math.min(startIndex + gamesPerPage, totalGames);
-        const gamesToDisplay = processedGames.slice(startIndex, endIndex);
-
-        gamesToDisplay.forEach((game, index) => {
-            const originalIndex = startIndex + index;
-            const gameCard = document.createElement('div');
-            gameCard.className = 'game-item';
-            gameCard.innerHTML = `
-                <div class="game-iframe-container">
-                    <iframe class="game-iframe" src="${game.play_url}" allowfullscreen="true"></iframe>
-                </div>
-                <div class="game-details">
-                    <label>Title:</label><input type="text" value="${game.title}" onchange="updateGameData(${originalIndex}, 'title', this.value)">
-                    <label>Description:</label><textarea rows="3" onchange="updateGameData(${originalIndex}, 'description', this.value)">${game.description || ''}</textarea>
-                    <div class="game-actions">
-                        <button class="remove-game-btn" onclick="removeGame(${originalIndex})">Remove</button>
-                    </div>
-                </div>
-            `;
-            gamesList.appendChild(gameCard);
-        });
-
-        updatePaginationControls(totalPages);
-      }
-
-      window.updateGameData = (index, field, value) => {
-        if (processedGames[index]) processedGames[index][field] = value;
-      }
-
-      window.removeGame = (index) => {
-        processedGames.splice(index, 1);
-        renderGamesList();
-      }
-
-      function updatePaginationControls(totalPages) {
-        pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
-        pageInfoBottom.textContent = `Page ${currentPage} of ${totalPages}`;
-        prevPageBtn.disabled = prevPageBtnBottom.disabled = currentPage === 1;
-        nextPageBtn.disabled = nextPageBtnBottom.disabled = currentPage === totalPages || totalPages === 0;
-      }
-
-      function changePage(direction) {
-        const totalPages = Math.ceil(processedGames.length / gamesPerPage);
-        currentPage = Math.max(1, Math.min(totalPages, currentPage + direction));
-        renderGamesList();
-      }
-
-      function changePageSize() {
-        gamesPerPage = parseInt(pageSizeSelect.value);
-        currentPage = 1;
-        renderGamesList();
-      }
-      
-      function showConfirmationModal() {
-        if (processedGames.length === 0) return updateStatus('No games to upload', 'error');
-        modalGameList.innerHTML = processedGames.map(game => `
-            <div class="modal-game-item">
-                <div class="modal-game-info">
-                    <img class="modal-game-thumbnail" src="${game.thumbnail_image}" alt="${game.title}">
-                    <div>
-                        <h3>${game.title}</h3>
-                        <p><strong>Category:</strong> ${game.main_category}</p>
-                    </div>
-                </div>
-            </div>
-        `).join('') + `<div class="modal-total-count">Total: ${processedGames.length}</div>`;
-        confirmationModal.style.display = 'block';
-      }
-
-      function closeModal() {
-        confirmationModal.style.display = 'none';
-      }
-      
-      async function handleSubmitAll() {
-        if (processedGames.length === 0) return;
-        closeModal();
-        await importGamesToSupabase(processedGames);
-        gamePreviewContainer.classList.add('hidden');
-        processedGames = [];
-      }
-
-      function validateInputs() {
-        if (!jsonFileInput.files.length) throw new Error('Please select a JSON file.');
-        if (!supabaseUrlInput.value || !supabaseKeyInput.value) throw new Error('Supabase URL and API key are required.');
-        return true;
-      }
-
-      function initSupabase() {
-        supabaseClient = supabase.createClient(supabaseUrlInput.value, supabaseKeyInput.value);
-      }
-
-      function readFileAsJson(file) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = e => { try { resolve(JSON.parse(e.target.result)); } catch (err) { reject(err); } };
-          reader.onerror = e => reject(new Error('File read error'));
-          reader.readAsText(file);
-        });
-      }
-
-      // --- UPDATED DATA PROCESSING ---
-      function determineOrientation(width, height) {
-        if (!width || !height) return 'landscape';
-        return parseInt(width) >= parseInt(height) ? 'landscape' : 'portrait';
-      }
-
-      function processGamemonitizeData(data, mainCategory) {
-        return data.map(game => ({
-          provider_game_id: game.id,
-          title: game.title,
-          description: game.description || '',
-          instructions: game.instructions || '',
-          slug: generateSlug(game.title),
-          category: game.category || 'Uncategorized',
-          main_category: mainCategory,
-          tags: game.tags || '',
-          orientation: determineOrientation(game.width, game.height),
-          width: game.width || '800',
-          height: game.height || '600',
-          thumbnail_image: game.thumb || '',
-          play_url: game.url || '',
-          provider: 'gamemonitize',
-          is_new: true
-        }));
-      }
-
-      function processGamepixData(data, mainCategory) {
-         if (!data.items || !Array.isArray(data.items)) return [];
-         return data.items.map(game => ({
-          provider_game_id: game.id,
-          title: game.title,
-          description: game.description || '',
-          instructions: '', // Not typically available in GamePix feeds
-          slug: game.namespace || generateSlug(game.title),
-          category: game.category || 'Uncategorized',
-          main_category: mainCategory,
-          tags: '', // Not typically available in GamePix feeds
-          orientation: game.orientation || determineOrientation(game.width, game.height),
-          width: game.width || '800',
-          height: game.height || '600',
-          quality_score: game.quality_score || null,
-          thumbnail_image: game.image || '',
-          play_url: game.url || '',
-          provider: 'gamepix',
-          is_new: true
-        }));
-      }
-
-      async function importGamesToSupabase(games) {
-        let successful = 0, failed = 0;
-        updateProgressBar(0);
-        for (let i = 0; i < games.length; i++) {
-          try {
-            // Check for existing game before inserting
-            const { data: existing } = await supabaseClient
-              .from('games')
-              .select('id')
-              .eq('provider', games[i].provider)
-              .eq('provider_game_id', games[i].provider_game_id)
-              .single();
-
-            let result;
-            if (existing) {
-              // Update existing game
-              result = await supabaseClient.from('games').update(games[i]).eq('id', existing.id);
-              addResultRow(true, games[i].title, games[i].provider, 'Updated');
-            } else {
-              // Insert new game
-              result = await supabaseClient.from('games').insert(games[i]);
-              addResultRow(true, games[i].title, games[i].provider, 'Inserted');
-            }
-
-            if (result.error) throw result.error;
-            
-            successful++;
-          } catch (error) {
-            addResultRow(false, games[i].title, games[i].provider, error.message);
-            failed++;
-          }
-          updateProgressBar(Math.round(((i + 1) / games.length) * 100));
-        }
-        updateStatus(failed ? `Imported ${successful}, failed ${failed}` : `Successfully imported ${successful} games`, failed ? 'warning' : 'success');
-      }
-
-      function generateSlug(title) { return title.toLowerCase().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, ''); }
-      
-      function addResultRow(success, title, provider, message) {
-        const row = resultsBody.insertRow();
-        row.innerHTML = `<td class="${success ? 'success' : 'error'}">${success ? 'Success' : 'Failed'}</td><td>${title}</td><td>${provider}</td><td>${message}</td>`;
-      }
-      
-      function updateProgressBar(percentage) { progressBar.style.width = `${percentage}%`; }
-      
-      function updateStatus(message, type) {
-        statusMessage.textContent = message;
-        statusMessage.className = `status-message ${type}`;
-        statusMessage.style.display = 'block';
-      }
-      
-      function resetResults() {
-        resultsBody.innerHTML = '';
-        updateProgressBar(0);
-        statusMessage.textContent = '';
-        statusMessage.style.display = 'none';
-      }
-      
-      function clearForm() {
-        jsonFileInput.value = '';
-        resetResults();
-        processedGames = [];
-        gamePreviewContainer.classList.add('hidden');
-      }
-      
-      function clearManualForm() {
-        document.getElementById('manual_title').value = '';
-        document.getElementById('manual_description').value = '';
-        document.getElementById('manual_play_url').value = '';
-        resetResults();
-      }
-      
-      async function checkDuplicateGames() {
-        if (processedGames.length === 0) return updateStatus('No games to check.', 'warning');
-        updateStatus('Checking for duplicates...', 'info');
-        initSupabase();
-        const duplicates = [];
-        for (const game of processedGames) {
-            const { data, error } = await supabaseClient.from('games').select('id, title').or(`provider_game_id.eq.${game.provider_game_id},title.eq.${game.title}`);
-            if (error) {
-                updateStatus(`Error checking duplicates: ${error.message}`, 'error');
-                return;
-            }
-            if (data && data.length > 0) {
-                duplicates.push({ local: game, remote: data[0] });
-            }
-        }
-        if (duplicates.length > 0) {
-            displayDuplicateModal(duplicates);
-        } else {
-            updateStatus('No duplicates found.', 'success');
-        }
-      }
-
-      function displayDuplicateModal(duplicates) {
-        duplicateGameList.innerHTML = duplicates.map((dup, index) => `
-            <div class="duplicate-game-item">
-                <h3>${dup.local.title}</h3>
-                <p>This game might already exist as "${dup.remote.title}" (ID: ${dup.remote.id})</p>
-                <button onclick="removeSingleDuplicate(${index})">Remove from list</button>
-            </div>
-        `).join('');
-        duplicateModal.style.display = 'block';
-      }
-
-      window.removeSingleDuplicate = (index) => {
-          const title = duplicateGameList.children[index].querySelector('h3').textContent;
-          const originalIndex = processedGames.findIndex(g => g.title === title);
-          if(originalIndex > -1) {
-              processedGames.splice(originalIndex, 1);
-          }
-          renderGamesList();
-          duplicateGameList.children[index].remove();
-          if(duplicateGameList.children.length === 0) closeDuplicateModal();
-      }
-
-      function removeAllDuplicateGames() {
-          const titlesInModal = [...duplicateGameList.querySelectorAll('h3')].map(h => h.textContent);
-          processedGames = processedGames.filter(g => !titlesInModal.includes(g.title));
-          renderGamesList();
-          closeDuplicateModal();
-          updateStatus(`Removed ${titlesInModal.length} duplicates from the list.`, 'info');
-      }
-      
-      function closeDuplicateModal() { 
-          duplicateModal.style.display = 'none'; 
-      }
-      
-      async function handleManualStore() { 
-        const game = {
-            title: document.getElementById('manual_title').value,
-            main_category: document.getElementById('manual_main_category').value,
-            description: document.getElementById('manual_description').value,
-            play_url: document.getElementById('manual_play_url').value,
-            provider: 'manual',
-            slug: generateSlug(document.getElementById('manual_title').value)
-        };
-        if(!game.title || !game.play_url) return updateStatus('Title and Play URL are required for manual entry.', 'error');
-        initSupabase();
-        await importGamesToSupabase([game]);
-      }
-
-    });
-  </script>
+  <script src="/script.js"></script>
 </body>
 </html>

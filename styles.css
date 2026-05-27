@@ -834,3 +834,113 @@ button {
     justify-content: center;
   }
 }
+
+/* === v2: server status + filters === */
+.server-config, .filters-config {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background-color: rgba(0,0,0,0.15);
+  border-radius: 0.5rem;
+}
+.server-config h3, .filters-config h3 {
+  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
+}
+.muted-note {
+  margin-top: 0.5rem;
+  color: var(--text-muted-color);
+  font-size: 0.85rem;
+}
+.muted-note code {
+  background: rgba(0,0,0,0.4);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+}
+.status-pending { color: var(--text-muted-color); }
+.status-ok { color: var(--success-color); font-weight: 600; }
+.status-warning { color: var(--warning-color); font-weight: 600; }
+.status-error { color: var(--error-color); font-weight: 600; }
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* === v2.1: manual entry grid === */
+.manual-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.manual-grid .form-group.full-width {
+  grid-column: 1 / -1;
+}
+.manual-grid .checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.required {
+  color: var(--error-color);
+  margin-left: 0.25rem;
+}
+
+/* === v2.1: duplicate modal toolbar + checkbox layout === */
+.duplicate-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(0,0,0,0.2);
+  border-radius: 0.4rem;
+}
+.select-all-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-color);
+  font-weight: 500;
+  cursor: pointer;
+  margin: 0;
+}
+.duplicate-game-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.duplicate-checkbox {
+  margin-top: 0.5rem;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.duplicate-content {
+  flex: 1;
+}
+
+/* === v2.1: preview overlay button === */
+.preview-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  cursor: pointer;
+  border: 0;
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+.preview-overlay:hover {
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .manual-grid {
+    grid-template-columns: 1fr;
+  }
+}
