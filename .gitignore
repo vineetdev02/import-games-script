@@ -1,0 +1,22 @@
+## Secrets and env
+server/.env
+server/.env.*
+!server/.env.example
+.env
+.env.local
+
+## Node
+server/node_modules/
+node_modules/
+
+## Server runtime state (checkpoints, failed-game exports)
+server/state/
+
+## OS / editor
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+## Logs
+*.log
