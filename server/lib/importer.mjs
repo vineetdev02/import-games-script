@@ -13,6 +13,7 @@
 import { EventEmitter } from "node:events";
 import { fillDefaults } from "./normalize.mjs";
 import { saveCheckpoint } from "./checkpoint.mjs";
+import { notifyRevalidate } from "./revalidate.mjs";
 
 const PROTECTED_ON_UPDATE = new Set(["play_count"]);
 
@@ -93,6 +94,12 @@ export function createImporter({ supabase, batchSize = 100, concurrency = 5 }) {
         try {
           await upsertBatch(batch);
           state.succeeded += batch.length;
+          /* Best-effort cache bust on the web app after each batch.
+           * Never aborts the import — revalidate is a hint, not a
+           * dependency. */
+          notifyRevalidate({
+            gameSlugs: batch.map((g) => g.slug).filter(Boolean),
+          }).catch(() => {});
         } catch (err) {
           state.failed += batch.length;
           for (const g of batch) {
@@ -122,6 +129,10 @@ export function createImporter({ supabase, batchSize = 100, concurrency = 5 }) {
     state.status = state.cancelRequested ? "cancelled" : "complete";
     emitProgress({ endedAt: state.endedAt });
     await saveCheckpoint(importId, state).catch(() => {});
+    /* Final sweep — make sure the home + category templates are
+     * busted once the import finishes, even if per-batch calls
+     * were rate-limited. */
+    notifyRevalidate({}).catch(() => {});
     events.emit("done", state);
     return state;
   }
