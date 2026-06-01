@@ -20,6 +20,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { normalize, PROVIDERS } from "./lib/normalize.mjs";
+import { CATEGORIES, isValidCategory, DEFAULT_CATEGORY } from "./lib/categories.mjs";
 import { findDuplicates } from "./lib/duplicates.mjs";
 import { createImporter } from "./lib/importer.mjs";
 import { loadCheckpoint, deleteCheckpoint, listCheckpoints } from "./lib/checkpoint.mjs";
@@ -122,13 +123,25 @@ app.get("/api/providers", (c) =>
   c.json({ providers: PROVIDERS.map((p) => ({ id: p.id, label: p.label })) }),
 );
 
+/* Canonical category taxonomy — the client builds its selectors from this
+ * so the import list can never drift from web0.2's category slugs. */
+app.get("/api/categories", (c) =>
+  c.json({ categories: CATEGORIES, default: DEFAULT_CATEGORY }),
+);
+
 app.post("/api/process", async (c) => {
   try {
-    const { provider, mainCategory, raw } = await c.req.json();
-    if (!mainCategory) {
-      return c.json({ error: "mainCategory is required" }, 400);
+    const { provider, raw, overrideCategory, forceAll } = await c.req.json();
+    if (forceAll && !isValidCategory(overrideCategory)) {
+      return c.json(
+        { error: `forceAll requires a valid overrideCategory (one of the canonical slugs)` },
+        400,
+      );
     }
-    const result = normalize(raw, provider || "auto", mainCategory);
+    const result = normalize(raw, provider || "auto", {
+      overrideCategory: isValidCategory(overrideCategory) ? overrideCategory : undefined,
+      forceAll: !!forceAll,
+    });
     return c.json({
       count: result.games.length,
       provider: result.providerId,

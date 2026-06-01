@@ -2,9 +2,23 @@
  *
  * Adding a new provider:
  *   1. Define `detect(raw)`: return true if the JSON looks like this provider's shape.
- *   2. Define `process(raw, mainCategory)`: return an array of normalized game rows.
+ *   2. Define `process(raw, opts)`: return an array of normalized game rows.
  *   3. Register it in PROVIDERS below.
+ *
+ * opts = { overrideCategory, forceAll } — see categories.mjs. Every row's
+ * `category` is mapped to one of web0.2's canonical slugs so games never
+ * land on a category page that doesn't exist.
  */
+
+import { resolveCategory, DEFAULT_CATEGORY } from "./categories.mjs";
+
+/* Pick the canonical category slug for a game.
+ * forceAll → every game gets the override slug (single-genre batch).
+ * otherwise → auto-map provider category/tags, falling back to "action". */
+function pickCategory(rawCategory, tagList, { overrideCategory, forceAll } = {}) {
+  if (forceAll && overrideCategory) return overrideCategory;
+  return resolveCategory(rawCategory, tagList, DEFAULT_CATEGORY);
+}
 
 /* ---------- text cleanup ---------- */
 const ENTITY_REPLACEMENTS = [
@@ -89,7 +103,7 @@ const gameMonetize = {
       ("tags" in sample || "category" in sample)
     );
   },
-  process(raw, mainCategory) {
+  process(raw, opts) {
     if (!Array.isArray(raw)) throw new Error("GameMonetize data must be an array");
     return raw.map((game) => {
       const cleanedTitle = cleanText(game.title) || "Untitled";
@@ -100,14 +114,15 @@ const gameMonetize = {
         .toLowerCase()
         .split(",")
         .map((t) => t.trim());
+      const category = pickCategory(game.category, tagsLower, opts);
       return {
         provider_game_id: id,
         title: cleanedTitle,
         description: cleanText(game.description),
         instructions: cleanText(game.instructions) || null,
         slug,
-        category: cleanText(game.category) || "uncategorized",
-        main_category: mainCategory,
+        category,
+        main_category: category,
         tags: tagsString,
         orientation: determineOrientation(game.width, game.height),
         quality_score: null,
@@ -141,7 +156,7 @@ const gamePix = {
       ("namespace" in sample || "quality_score" in sample)
     );
   },
-  process(raw, mainCategory) {
+  process(raw, opts) {
     if (!raw || !Array.isArray(raw.items)) {
       throw new Error("GamePix data must contain an `items` array");
     }
@@ -152,14 +167,16 @@ const gamePix = {
       const baseSlug = game.namespace ? slugify(game.namespace) : slugify(cleanedTitle);
       const slug = `${baseSlug || "game"}${id ? "-" + id : ""}`;
       const datePublished = parseDate(game.date_published);
+      /* GamePix feed carries no tag list, so mapping leans on `category`. */
+      const category = pickCategory(game.category, [], opts);
       return {
         provider_game_id: id,
         title: cleanedTitle,
         description: cleanText(game.description),
         instructions: null,
         slug,
-        category: cleanText(game.category) || "uncategorized",
-        main_category: mainCategory,
+        category,
+        main_category: category,
         tags: "",
         orientation: game.orientation || determineOrientation(game.width, game.height),
         quality_score: typeof game.quality_score === "number" ? game.quality_score : null,
@@ -195,8 +212,9 @@ export function detectProvider(raw) {
 }
 
 /* Top-level dispatcher. providerId may be 'auto', 'gamemonitize', 'gamepix', etc.
+ * opts = { overrideCategory, forceAll } controls category mapping.
  * Returns { games, providerId, detected } */
-export function normalize(raw, providerId, mainCategory) {
+export function normalize(raw, providerId, opts = {}) {
   let provider;
   let detected = false;
   if (!providerId || providerId === "auto") {
@@ -213,7 +231,7 @@ export function normalize(raw, providerId, mainCategory) {
       throw new Error(`Unknown provider: ${providerId}`);
     }
   }
-  const games = provider.process(raw, mainCategory);
+  const games = provider.process(raw, opts);
   return { games, providerId: provider.id, providerLabel: provider.label, detected };
 }
 
@@ -225,6 +243,5 @@ export function fillDefaults(game) {
 }
 
 /* Back-compat exports (so anything still calling these works) */
-export const processGameMonetize = (raw, mainCategory) =>
-  gameMonetize.process(raw, mainCategory);
-export const processGamePix = (raw, mainCategory) => gamePix.process(raw, mainCategory);
+export const processGameMonetize = (raw, opts) => gameMonetize.process(raw, opts);
+export const processGamePix = (raw, opts) => gamePix.process(raw, opts);

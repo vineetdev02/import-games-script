@@ -12,15 +12,22 @@ const API = (() => {
   return sameOrigin ? "" : "http://localhost:5174";
 })();
 
-const MAIN_CATEGORIES = [
-  "New Releases",
-  "Trending Now",
-  "Most Played",
-  "Featured Games",
-  "Banner Games",
-  "Editor's Choice",
-  "All Action Games",
+/* Canonical categories — mirror of web0.2's slugs. This is only a
+ * fallback; the real list is fetched from GET /api/categories at boot so
+ * the import UI can never drift from the site. {slug,label} pairs. */
+let CATEGORIES = [
+  { slug: "puzzles", label: "Puzzles" },
+  { slug: "hypercasual", label: "Hypercasual" },
+  { slug: "adventure", label: "Adventure" },
+  { slug: "shooting", label: "Shooting" },
+  { slug: "racing", label: "Racing" },
+  { slug: "sports", label: "Sports" },
+  { slug: "action", label: "Action" },
+  { slug: "arcade", label: "Arcade" },
+  { slug: "clicker", label: "Clicker" },
+  { slug: "girls", label: "Girls" },
 ];
+const DEFAULT_CATEGORY = "action";
 
 document.addEventListener("DOMContentLoaded", () => {
   /* ---------- DOM (every reference uses ?. so missing nodes can't crash boot) ---------- */
@@ -86,10 +93,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let activeImportId = null;
   let activeEventSource = null;
   let duplicatePairs = [];
-  let selectedMainCategory = MAIN_CATEGORIES[0];
+  let selectedOverrideCategory = DEFAULT_CATEGORY;
 
   /* ---------- boot ---------- */
-  populateCategorySelectors();
+  loadCategories().then(populateCategorySelectors);
   pingServer();
   refreshProvidersList();
 
@@ -131,33 +138,59 @@ document.addEventListener("DOMContentLoaded", () => {
   toggleImportMode();
 
   /* ---------- category selectors ---------- */
+  /* Fetch the canonical category list from the server (single source of
+   * truth = server/lib/categories.mjs). Falls back to the baked-in list. */
+  async function loadCategories() {
+    try {
+      const res = await fetch(`${API}/api/categories`);
+      const data = await res.json();
+      if (Array.isArray(data.categories) && data.categories.length) {
+        CATEGORIES = data.categories;
+      }
+      selectedOverrideCategory = data.default || CATEGORIES[0]?.slug || DEFAULT_CATEGORY;
+    } catch {
+      /* offline / file:// — keep the baked-in fallback list */
+      selectedOverrideCategory = DEFAULT_CATEGORY;
+    }
+  }
+
   function populateCategorySelectors() {
     if (mainCategoryContainer) {
-      let html = '<label class="detail-label">Select Main Category:</label><div class="radio-grid">';
-      MAIN_CATEGORIES.forEach((category, index) => {
+      let html =
+        '<label class="detail-label">Category mapping</label>' +
+        '<p class="muted-note">Genres are auto-detected from each game\'s category and tags ' +
+        'and mapped to one of the site categories below. Unmapped games default to ' +
+        `<strong>${escapeHtml(DEFAULT_CATEGORY)}</strong>.</p>` +
+        '<label class="checkbox-row"><input type="checkbox" id="forceAllCategory">' +
+        " Force one category for every game in this file (override auto-detect)</label>" +
+        '<div class="radio-grid">';
+      CATEGORIES.forEach((cat, index) => {
         const id = `cat_radio_${index}`;
-        const checked = index === 0 ? "checked" : "";
-        html += `<div class="radio-item"><input type="radio" id="${id}" name="mainCategory" value="${escapeAttr(category)}" ${checked}><label for="${id}">${escapeHtml(category)}</label></div>`;
+        const checked = cat.slug === selectedOverrideCategory ? "checked" : "";
+        html += `<div class="radio-item"><input type="radio" id="${id}" name="overrideCategory" value="${escapeAttr(cat.slug)}" ${checked}><label for="${id}">${escapeHtml(cat.label)}</label></div>`;
       });
       html += "</div>";
       mainCategoryContainer.innerHTML = html;
-      mainCategoryContainer.querySelectorAll('input[name="mainCategory"]').forEach((el) => {
+      mainCategoryContainer.querySelectorAll('input[name="overrideCategory"]').forEach((el) => {
         el.addEventListener("change", (e) => {
-          if (e.target.checked) selectedMainCategory = e.target.value;
+          if (e.target.checked) selectedOverrideCategory = e.target.value;
         });
       });
     }
     if (manualMainCategorySelect) {
-      manualMainCategorySelect.innerHTML = MAIN_CATEGORIES.map(
-        (c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`,
+      manualMainCategorySelect.innerHTML = CATEGORIES.map(
+        (c) => `<option value="${escapeAttr(c.slug)}">${escapeHtml(c.label)}</option>`,
       ).join("");
     }
   }
 
-  function getSelectedMainCategory() {
-    /* Read from radio buttons live so we always have the current value. */
-    const checked = document.querySelector('input[name="mainCategory"]:checked');
-    return checked?.value || selectedMainCategory;
+  function getOverrideCategory() {
+    const checked = document.querySelector('input[name="overrideCategory"]:checked');
+    return checked?.value || selectedOverrideCategory;
+  }
+
+  function getForceAll() {
+    return !!$("forceAllCategory")?.checked;
   }
 
   /* ---------- server health ---------- */
@@ -222,7 +255,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const file = jsonFileInput.files[0];
     const provider = providerSelect.value || "auto";
-    const mainCategory = getSelectedMainCategory();
+    const overrideCategory = getOverrideCategory();
+    const forceAll = getForceAll();
 
     let raw;
     try {
@@ -237,7 +271,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch(`${API}/api/process`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, mainCategory, raw }),
+        body: JSON.stringify({ provider, raw, overrideCategory, forceAll }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
@@ -529,8 +563,10 @@ document.addEventListener("DOMContentLoaded", () => {
       description: $("manual_description")?.value || "",
       instructions: $("manual_instructions")?.value || "",
       slug: slugify($("manual_title")?.value || ""),
-      category: $("manual_category")?.value.trim() || "Uncategorized",
-      main_category: $("manual_main_category")?.value || MAIN_CATEGORIES[0],
+      /* Category is the canonical site slug chosen in the select. The free
+       * sub-category text is informational only (web0.2 ignores it). */
+      category: $("manual_main_category")?.value || CATEGORIES[0]?.slug || DEFAULT_CATEGORY,
+      main_category: $("manual_main_category")?.value || CATEGORIES[0]?.slug || DEFAULT_CATEGORY,
       tags: $("manual_tags")?.value || "",
       orientation: determineOrientation(
         $("manual_width")?.value,
@@ -697,11 +733,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const more = document.createElement("div");
     more.className = "additional-details";
-    more.appendChild(labeledInput("Category:", game.category, (v) => update(originalIndex, "category", v)));
+    /* Category is constrained to canonical site slugs — editing it to a
+     * free-text value would orphan the game on web0.2. Keep main_category
+     * mirrored so the stored row stays consistent. */
+    const categorySlugs = CATEGORIES.map((c) => c.slug);
     more.appendChild(
-      labeledSelect("Main Category:", MAIN_CATEGORIES, game.main_category, (v) =>
-        update(originalIndex, "main_category", v),
-      ),
+      labeledSelect("Category:", categorySlugs, game.category, (v) => {
+        update(originalIndex, "category", v);
+        update(originalIndex, "main_category", v);
+      }),
     );
     more.appendChild(labeledInput("Tags:", game.tags, (v) => update(originalIndex, "tags", v)));
 

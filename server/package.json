@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "dev": "node --watch server.mjs"
+    "dev": "node --watch server.mjs",
+    "migrate:categories": "node migrate-categories.mjs",
+    "migrate:categories:apply": "node migrate-categories.mjs --apply"
   },
   "engines": {
     "node": ">=20"
