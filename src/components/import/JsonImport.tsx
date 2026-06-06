@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import Image from "next/image";
-import { Upload, CheckCircle2, AlertTriangle, FileJson, Sparkles, ImageOff, ClipboardPaste, Link2, Play, Eye, Pencil, ChevronLeft, ChevronRight } from "lucide-react";
+import { Upload, CheckCircle2, AlertTriangle, FileJson, Sparkles, ImageOff, ClipboardPaste, Link2, Play, Eye, Pencil, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -143,6 +143,18 @@ export function JsonImport({ categories, bannerReady }: { categories: Category[]
     setFresh((rows) => rows.map((g, idx) => (idx === i ? { ...g, is_banner: v } : g)));
   }
 
+  /* Clear the currently loaded JSON / staged list — does NOT touch the
+   * database. Lets you discard this file and load a different one. */
+  function clearStaging() {
+    setResult(null);
+    setFresh([]);
+    setSelected(new Set());
+    setFileName("");
+    rawRef.current = null;
+    setPage(1);
+    toast.success("Cleared — load another file");
+  }
+
   async function commit() {
     if (!result) return;
     const games = fresh.filter((_, i) => selected.has(i));
@@ -258,17 +270,36 @@ export function JsonImport({ categories, bannerReady }: { categories: Category[]
               {result.detected ? "(auto)" : "(manual)"}
             </p>
 
+            {result.duplicatesInDb.length > 0 && (
+              <details className="rounded-lg border border-border bg-secondary/30 p-3 text-sm">
+                <summary className="cursor-pointer font-medium text-[color:var(--warning)]">
+                  {result.duplicatesInDb.length} already in your catalog — auto-skipped (not re-imported)
+                </summary>
+                <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto text-xs text-muted-foreground">
+                  {result.duplicatesInDb.map((d, i) => (
+                    <li key={i}>· {d.title} <span className="opacity-60">({d.provider})</span></li>
+                  ))}
+                </ul>
+              </details>
+            )}
+
             {fresh.length === 0 ? (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/40 p-3 text-sm text-muted-foreground">
                 <AlertTriangle className="size-4" /> No fresh games — everything in this file is already in the database.
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between">
+                <div className="sticky top-0 z-10 -mx-1 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-card/95 px-1 py-1 backdrop-blur supports-[backdrop-filter]:bg-card/80">
                   <span className="text-sm text-muted-foreground">{selected.size} of {fresh.length} selected · review before importing</span>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
                     <Button size="sm" variant="ghost" onClick={() => setSelected(new Set(fresh.map((_, i) => i)))}>Select all</Button>
                     <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>None</Button>
+                    <Button size="sm" variant="outline" onClick={clearStaging} title="Discard this loaded file (does not touch the database)">
+                      <X /> Clear all
+                    </Button>
+                    <Button size="sm" onClick={commit} disabled={committing || selected.size === 0}>
+                      {committing ? <Spinner /> : <CheckCircle2 />} Import {selected.size} game{selected.size === 1 ? "" : "s"}
+                    </Button>
                   </div>
                 </div>
 
@@ -344,12 +375,6 @@ export function JsonImport({ categories, bannerReady }: { categories: Category[]
                     <Button size="icon" variant="outline" className="size-8" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}><ChevronLeft /></Button>
                     <Button size="icon" variant="outline" className="size-8" disabled={safePage >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}><ChevronRight /></Button>
                   </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button onClick={commit} disabled={committing || selected.size === 0}>
-                    {committing ? <Spinner /> : <CheckCircle2 />} Import {selected.size} game{selected.size === 1 ? "" : "s"}
-                  </Button>
                 </div>
               </>
             )}

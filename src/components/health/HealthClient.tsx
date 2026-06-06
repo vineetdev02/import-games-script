@@ -14,6 +14,11 @@ import type { GameRow, ImageHealth } from "@/types/game";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EditGameDialog } from "@/components/games/EditGameDialog";
 
+type Severity = "error" | "warn";
+interface Issue {
+  label: string;
+  severity: Severity;
+}
 interface Problem {
   id: string;
   title: string;
@@ -24,17 +29,13 @@ interface Problem {
   is_banner: boolean;
   thumbnail: ImageHealth | "missing" | "broken" | "ok";
   banner: ImageHealth | "missing" | "broken" | "ok";
-  reasons: string[];
-}
-
-function statusBadge(s: string, label: string) {
-  if (s === "ok") return null;
-  return <Badge variant={s === "broken" ? "destructive" : "warning"}>{label}: {s}</Badge>;
+  issues: Issue[];
 }
 
 export function HealthClient() {
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState<number | null>(null);
+  const [counts, setCounts] = useState<{ errorCount: number; warnCount: number }>({ errorCount: 0, warnCount: 0 });
   const [problems, setProblems] = useState<Problem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirm, setConfirm] = useState<{ ids: string[]; label: string } | null>(null);
@@ -52,10 +53,11 @@ export function HealthClient() {
     setScanning(true);
     setSelected(new Set());
     try {
-      const d = await api<{ scanned: number; problems: Problem[] }>("/api/health/scan", { method: "POST", json: {} });
+      const d = await api<{ scanned: number; problems: Problem[]; errorCount: number; warnCount: number }>("/api/health/scan", { method: "POST", json: {} });
       setScanned(d.scanned);
       setProblems(d.problems);
-      toast.success(`Scanned ${d.scanned} — ${d.problems.length} with image issues`);
+      setCounts({ errorCount: d.errorCount, warnCount: d.warnCount });
+      toast.success(`Scanned ${d.scanned} — ${d.errorCount} need fixing, ${d.warnCount} with warnings`);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -86,16 +88,16 @@ export function HealthClient() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Needs Attention</h1>
-          <p className="text-sm text-muted-foreground">Games with a missing or broken (404) thumbnail or banner image.</p>
+          <p className="text-sm text-muted-foreground">Games with broken/missing images, or incomplete data (title, play URL, category, slug, dimensions, duplicate slugs).</p>
         </div>
-        <Button onClick={scan} disabled={scanning}>{scanning ? <Spinner /> : <ScanSearch />} Scan images</Button>
+        <Button onClick={scan} disabled={scanning}>{scanning ? <Spinner /> : <ScanSearch />} Run full scan</Button>
       </div>
 
       {scanned !== null && problems.length === 0 && (
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-muted-foreground">
             <ShieldCheck className="size-5 text-[color:var(--success)]" />
-            All {scanned} games have working images. Nothing to fix.
+            All {scanned} games passed — working images and complete data. Nothing to fix.
           </CardContent>
         </Card>
       )}
@@ -103,7 +105,9 @@ export function HealthClient() {
       {problems.length > 0 && (
         <>
           <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm">
-            <span>{problems.length} games with issues</span>
+            <span className="font-medium">{problems.length} games with issues</span>
+            {counts.errorCount > 0 && <Badge variant="destructive">{counts.errorCount} need fixing</Badge>}
+            {counts.warnCount > 0 && <Badge variant="warning">{counts.warnCount} warnings</Badge>}
             {selected.size > 0 && (
               <>
                 <Button size="sm" variant="destructive" onClick={() => setConfirm({ ids: [...selected], label: `${selected.size} selected` })}><Trash2 /> Remove selected</Button>
@@ -142,7 +146,13 @@ export function HealthClient() {
                     </TableCell>
                     <TableCell><div className="font-medium leading-tight line-clamp-1">{p.title}</div><div className="text-xs text-muted-foreground">{p.is_banner ? "banner game" : ""}</div></TableCell>
                     <TableCell><Badge variant="outline">{p.category}</Badge></TableCell>
-                    <TableCell><div className="flex flex-wrap gap-1">{statusBadge(p.thumbnail, "thumb")}{statusBadge(p.banner, "banner")}</div></TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {p.issues.map((issue, idx) => (
+                          <Badge key={idx} variant={issue.severity === "error" ? "destructive" : "warning"}>{issue.label}</Badge>
+                        ))}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" className="size-8" title="Fix / edit" onClick={() => openEdit(p.id)}><Pencil /></Button>
