@@ -25,6 +25,8 @@ export interface GameRow {
   is_new: boolean | null;
   is_banner: boolean | null;
   play_count: number | null;
+  seo_about: string | null;
+  seo_faq: { question: string; answer: string }[] | null;
   created_at?: string | null;
 }
 

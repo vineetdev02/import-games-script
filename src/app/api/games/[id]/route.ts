@@ -16,6 +16,7 @@ const EDITABLE: (keyof GameRow)[] = [
   "title", "description", "instructions", "slug", "category", "main_category",
   "tags", "orientation", "quality_score", "width", "height", "banner_image",
   "thumbnail_image", "play_url", "is_featured", "is_new", "is_banner", "play_count",
+  "seo_about", "seo_faq",
 ];
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

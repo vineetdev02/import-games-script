@@ -37,6 +37,7 @@ export function EditGameDialog({
 }) {
   const [form, setForm] = useState<Partial<GameRow>>({});
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     if (game) setForm({ ...game });
@@ -44,6 +45,28 @@ export function EditGameDialog({
 
   function set<K extends keyof GameRow>(key: K, value: GameRow[K]) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  const faq = form.seo_faq ?? [];
+  function setFaq(next: { question: string; answer: string }[]) {
+    set("seo_faq", next.length ? next : null);
+  }
+
+  async function generateSeo() {
+    if (!game) return;
+    setGenerating(true);
+    try {
+      const res = await api<{ about: string; faq: { question: string; answer: string }[] }>(
+        `/api/games/${game.id}/generate-seo`,
+        { method: "POST" },
+      );
+      setForm((f) => ({ ...f, seo_about: res.about, seo_faq: res.faq }));
+      toast.success("Generated — review, then Save");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   async function save() {
@@ -162,6 +185,74 @@ export function EditGameDialog({
                 <label className="flex items-center gap-2 text-sm" title={bannerReady ? "" : "Run the is_banner migration first"}>
                   <Switch checked={!!form.is_banner} onCheckedChange={(v) => set("is_banner", v)} disabled={!bannerReady} /> Banner game
                 </label>
+              </div>
+
+              {/* SEO content — overrides the auto-generated about + FAQ on the
+                  public game page when present. Empty = use the template. */}
+              <div className="sm:col-span-2 space-y-3 rounded-lg border border-border bg-secondary/40 p-3">
+                <div className="flex items-center justify-between">
+                  <Label>SEO content (overrides templated about + FAQ)</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={generateSeo} disabled={generating}>
+                    {generating && <Spinner />} ✨ Generate with AI
+                  </Button>
+                </div>
+
+                <Field label="About this game">
+                  <Textarea
+                    value={form.seo_about ?? ""}
+                    onChange={(e) => set("seo_about", e.target.value || null)}
+                    rows={5}
+                    placeholder="Unique about copy. Leave empty to use the auto template."
+                  />
+                </Field>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>FAQ</Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setFaq([...faq, { question: "", answer: "" }])}
+                    >
+                      + Add Q&amp;A
+                    </Button>
+                  </div>
+                  {faq.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      No custom FAQ — the page uses the auto template. Generate or add Q&amp;A to override.
+                    </p>
+                  )}
+                  {faq.map((item, i) => (
+                    <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
+                      <div className="flex gap-2">
+                        <Input
+                          value={item.question}
+                          placeholder="Question"
+                          onChange={(e) =>
+                            setFaq(faq.map((f, idx) => (idx === i ? { ...f, question: e.target.value } : f)))
+                          }
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setFaq(faq.filter((_, idx) => idx !== i))}
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                      <Textarea
+                        value={item.answer}
+                        placeholder="Answer"
+                        rows={2}
+                        onChange={(e) =>
+                          setFaq(faq.map((f, idx) => (idx === i ? { ...f, answer: e.target.value } : f)))
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
 
