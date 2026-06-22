@@ -1,71 +1,138 @@
-# ActionGames Admin Dashboard
+# ActionGames — Admin Dashboard & Importer
 
-Local-only admin dashboard for the actiongames.io Supabase catalog. Manage games,
-banners, and image health. Black theme, shadcn/ui + Tailwind 4, Next.js 16.
+Local-only control panel + import tooling for the actiongames.io Supabase catalog.
+Manage games, banners, categories, image health; bulk-import games from providers;
+seed SEO content and play counts. Black theme, shadcn/ui + Tailwind 4, Next.js 16.2.6.
 
-> **Local use only.** This app uses the Supabase **service-role key** (full write
+- **Repo:** `vineetdev02/import-games-script`
+- **Pairs with:** the public site (`vineetdev02/action-games`, the sibling `web/`)
+
+> 🔒 **Local use only.** This app uses the Supabase **service-role key** (full write
 > access). Never deploy it or expose it to the internet.
+
+> ⚠️ Customized Next.js build — read `node_modules/next/dist/docs/` before changing
+> rendering/caching code. See `AGENTS.md`.
+
+---
 
 ## Run
 
 ```bash
-npm install            # first time only
-PORT=5180 npm run dev  # http://localhost:5180
+npm install              # first time only
+cp .env.example .env.local   # then fill in the values
+npm run dev              # http://localhost:3001
 ```
 
-Open the URL, enter the password from `.env.local` (`ADMIN_PASSWORD`, default `admin`).
+Open the URL and enter `ADMIN_PASSWORD` from `.env.local`.
 
-## One-time DB migration (for banner games)
+---
 
-Banner games need an `is_banner` column. The dashboard works without it, but the
-banner toggle is disabled until you run this in the Supabase SQL editor:
+## How changes reach the live website
 
-```sql
-alter table games add column if not exists is_banner boolean default false;
+The admin writes to the **same Supabase DB** the live site reads. But the site caches
+its catalog (1h `unstable_cache` + ISR), so writes don't appear instantly **unless the
+web cache is busted**. Two paths:
+
+| You add/change a game via… | Shows on actiongames.io after… |
+|----------------------------|--------------------------------|
+| **`scripts/add-game.mjs`** (CLI import) | **Instantly** — it auto-`POST`s the web's `/api/revalidate` after writing |
+| **`scripts/backfill-play-counts.mjs`** | **Instantly** — same auto-revalidate |
+| **Dashboard UI** (Add Games / edit / delete) | **Up to ~1 hour** — the UI does **not** bust the web cache yet; it waits for the site's revalidate timer |
+
+To force an instant refresh after a UI change, hit the web endpoint manually:
+
+```bash
+curl -X POST "$REVALIDATE_URL" -H "x-revalidate-secret: $REVALIDATE_SECRET" \
+  -H "Content-Type: application/json" -d '{}'
 ```
 
-See `migrations/001_add_is_banner.sql`. After running it, hit **Refresh** on the
-Overview page.
+> A "frozen" live site (newest games missing / wrong order) is a **stale web cache**,
+> not bad data — the rows are already in Supabase. Revalidate to fix.
 
-## Features
+---
 
-- **Overview** — counts (total, featured, banner, new, per-category), migration prompt.
+## Scripts (CLI tooling)
+
+| Script | Purpose |
+|--------|---------|
+| `npm run add-game -- --json '{...}'` | Import one/many games from extracted provider data. Auto-detects provider (GameMonetize / GamePix), maps the category to a canonical slug, verifies cover + play URL, **cross-provider dedups**, seeds a play count, upserts, then revalidates the live cache. Flags: `--dry-run --force --no-verify --no-revalidate --quiet`. Accepts `--file` or piped stdin. |
+| `node scripts/backfill-play-counts.mjs` | Give every game with `play_count` = 0/null a believable, skewed-random count (never touches positive values). `--dry-run` prints a histogram. Auto-revalidates after writing. |
+| `node scripts/generate-seo-content.ts` | Generate per-game `seo_about` + `seo_faq` via OpenRouter free models. |
+
+`scripts/lib/play-count.mjs` is the single source of truth for the play-count
+distribution, shared by `add-game` and the backfill so new and existing rows match.
+
+---
+
+## Dashboard features
+
+- **Overview** — counts (total, featured, banner, new, per-category) + migration prompt.
 - **Games** — search, filter (category / featured / banner / new), sort, paginate.
-  Per-row **play** (in-dashboard iframe), **edit** (all fields), **delete**.
-  Bulk delete selected, and delete-all-in-category.
+  Per-row **play** (in-dashboard iframe), **edit** (all fields), **delete**. Bulk
+  delete selected, and delete-all-in-category.
 - **Add Games**
-  - *JSON Import* — auto-detect provider (GameMonetize / GamePix), map categories to
-    the canonical site slugs, and **cross-provider dedup**: a game already in the DB
-    (under any provider) is detected by normalized title + play URL and skipped.
-    Preview fresh vs duplicate counts before committing.
-  - *Manual Add* — full form incl. banner image + is_banner.
-- **Needs Attention** — scans every game's thumbnail + banner for missing/404/broken
-  images and lists only the problems, with bulk smart-remove.
-- **Categories** — the canonical 10 (mirrored from web0.2), counts, manage/delete per
-  category.
+  - *JSON Import* — provider auto-detect, canonical category mapping, cross-provider
+    dedup (normalized title + play URL), fresh-vs-duplicate preview before commit.
+  - *Manual Add* — full form incl. banner image + `is_banner`.
+- **Needs Attention** — scans every thumbnail/banner for missing/404/broken images,
+  lists only the problems, with bulk smart-remove.
+- **Categories** — the canonical 10 (read from the site), counts, manage/delete.
 
-## Config
+---
+
+## Environment
 
 `.env.local`:
 
 | Var | Purpose |
 |-----|---------|
 | `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_KEY` | service-role key (write access) |
+| `SUPABASE_SERVICE_KEY` | service-role key (full write access — keep secret) |
 | `ADMIN_PASSWORD` | password gate for the dashboard |
-| `WEB02_CATEGORIES_PATH` | path to web0.2's `categories.json` (source of truth) |
+| `WEB02_CATEGORIES_PATH` | path to the site's `categories.json` (defaults to the sibling web app) |
+| `REVALIDATE_SECRET` | shared secret for the web's `/api/revalidate` — **must match** `web/.env.local` |
+| `REVALIDATE_URL` | the web revalidate endpoint, e.g. `https://actiongames.io/api/revalidate` |
+
+`REVALIDATE_SECRET` / `REVALIDATE_URL` are what let the CLI scripts bust the live
+cache. Without them the scripts still write to Supabase but skip revalidation (the
+site then refreshes on its own ~1h timer).
+
+---
+
+## One-time DB migration (banner games)
+
+Banner games need an `is_banner` column. The dashboard works without it, but the
+banner toggle is disabled until you run (Supabase SQL editor):
+
+```sql
+alter table games add column if not exists is_banner boolean default false;
+```
+
+See `migrations/001_add_is_banner.sql`; `002_add_seo_content.sql` adds the
+`seo_about` / `seo_faq` columns. After running, hit **Refresh** on Overview.
+
+---
 
 ## Source of truth
 
-Categories are **read from `../web0.2/public/data/categories.json`** — the same list
-the live site uses. The dashboard never keeps its own copy, so the two can't drift.
+Categories are **read from the sibling site's `categories.json`** (the canonical 10),
+so the dashboard and the live site can't drift. Provider categories are normalized
+onto these slugs by `src/lib/category-map.ts` (mirrored in `scripts/add-game.mjs` —
+keep the two in sync).
 
 ## Architecture
 
-- `src/lib/` — server-only data layer: `supabase` (service client), `games` (CRUD +
-  stats), `normalize` + `category-map` (provider import), `dedup` (cross-provider),
-  `image-check` (404 detection), `categories` (source-of-truth reader), `schema`
-  (is_banner capability probe).
-- `src/app/api/` — route handlers (all mutations server-side).
-- `src/proxy.ts` — Next 16 auth gate (renamed from `middleware`).
-- `src/components/` — UI (shadcn-style) + feature components.
+```
+scripts/
+  add-game.mjs              CLI importer (provider → normalize → dedup → upsert → revalidate)
+  backfill-play-counts.mjs  one-shot play-count seeding
+  generate-seo-content.ts   AI SEO about/FAQ generation
+  lib/play-count.mjs        shared play-count distribution
+src/
+  lib/        server-only: supabase (service client), games (CRUD + stats),
+              normalize + category-map (import), dedup, image-check, categories, schema
+  app/api/    route handlers (all mutations server-side)
+  proxy.ts    Next 16 auth gate (renamed from middleware)
+  components/  shadcn-style UI + feature components
+migrations/   SQL: is_banner, seo content
+```
