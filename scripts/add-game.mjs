@@ -18,16 +18,18 @@
  *   echo '{...}' | node scripts/add-game.mjs            # piped stdin
  *
  * Flags:
- *   --dry-run     normalize + validate + dedupe, print the row, but DON'T write
- *   --force       insert even if it looks like a duplicate of an existing game
- *   --no-verify   skip the network probe of thumbnail / play_url (faster, less safe)
- *   --quiet       only print the final one-line summary
+ *   --dry-run        normalize + validate + dedupe, print the row, but DON'T write
+ *   --force          insert even if it looks like a duplicate of an existing game
+ *   --no-verify      skip the network probe of thumbnail / play_url (faster, less safe)
+ *   --no-revalidate  don't bust the live site's catalog cache after a successful import
+ *   --quiet          only print the final one-line summary
  */
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { randomPlayCount } from "./lib/play-count.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.resolve(__dirname, ".."); // admin-dashboard/
@@ -310,7 +312,9 @@ function isDuplicate(g, keys) {
 }
 async function upsertOne(g) {
   const banner = await hasBannerColumn();
-  const row = { ...g, play_count: 0 };
+  // Seed a believable cosmetic play count on insert (same distribution as the
+  // backfill script) so new games never render a dead-looking "0 plays".
+  const row = { ...g, play_count: randomPlayCount() };
   if (!banner) delete row.is_banner;
   const { error } = await supabase.from(GAMES_TABLE)
     .upsert(row, { onConflict: "provider,provider_game_id", ignoreDuplicates: false });
@@ -319,13 +323,14 @@ async function upsertOne(g) {
 
 /* ----------------------------------- input ------------------------------------ */
 function parseArgs(argv) {
-  const flags = { dryRun: false, force: false, verify: true };
+  const flags = { dryRun: false, force: false, verify: true, revalidate: true };
   let jsonStr = null, file = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") flags.dryRun = true;
     else if (a === "--force") flags.force = true;
     else if (a === "--no-verify") flags.verify = false;
+    else if (a === "--no-revalidate") flags.revalidate = false;
     else if (a === "--quiet") QUIET = true;
     else if (a === "--json") jsonStr = argv[++i];
     else if (a === "--file") file = argv[++i];
@@ -357,7 +362,7 @@ const HELP = `add-game.mjs — store a game in Supabase from extracted provider 
   node scripts/add-game.mjs --file game.json
   echo '<json>' | node scripts/add-game.mjs
 
-Flags: --dry-run  --force  --no-verify  --quiet
+Flags: --dry-run  --force  --no-verify  --no-revalidate  --quiet
 
 Input fields (only title + play_url required; rest auto-filled):
   title, play_url            REQUIRED
@@ -370,6 +375,37 @@ Input fields (only title + play_url required; rest auto-filled):
   is_featured, is_new, is_banner, provider, provider_game_id  (all auto/optional)
 
 Canonical categories: ${SLUGS.join(", ")}`;
+
+/* ------------------------------ cache revalidation ---------------------------- */
+/* Bust the live site's catalog cache (tag games:all) so freshly imported games
+ * show up immediately. Without this, /category/* serves a stale prerender until
+ * the 1-hour ISR safety-net expires — which is exactly how a batch of newer
+ * games can vanish from the "newest" view. Non-fatal: a failure here never
+ * fails the import, since the rows are already safely in Supabase. */
+async function revalidateSite() {
+  const url = ENV.REVALIDATE_URL || "https://actiongames.io/api/revalidate";
+  const secret = ENV.REVALIDATE_SECRET;
+  if (!secret) {
+    warn("skipping cache revalidation — REVALIDATE_SECRET not set in admin-dashboard/.env.local");
+    return;
+  }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-revalidate-secret": secret },
+      body: "{}",
+      signal: ctrl.signal,
+    });
+    if (res.ok) ok(`live site cache revalidated ${C.dim}(${url})${C.reset}`);
+    else warn(`cache revalidation failed: HTTP ${res.status} — site will refresh within 1h on its own`);
+  } catch (e) {
+    warn(`cache revalidation request failed: ${e.name === "AbortError" ? "timeout" : (e.message || e)} — site will refresh within 1h on its own`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /* ------------------------------------ main ------------------------------------ */
 async function main() {
@@ -427,6 +463,13 @@ async function main() {
   if (skipped) parts.push(`${C.yellow}${skipped} skipped${C.reset}`);
   if (failed) parts.push(`${C.red}${failed} failed${C.reset}`);
   console.log(`${flags.dryRun ? "[dry run] " : ""}${parts.join(", ")}`);
+
+  /* Only bust the cache when we actually wrote something new. */
+  if (!flags.dryRun && flags.revalidate && stored > 0) {
+    log("");
+    await revalidateSite();
+  }
+
   if (failed) process.exit(1);
 }
 
