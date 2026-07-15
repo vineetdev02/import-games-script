@@ -37,9 +37,10 @@ web cache is busted**. Two paths:
 |----------------------------|--------------------------------|
 | **`scripts/add-game.mjs`** (CLI import) | **Instantly** — it auto-`POST`s the web's `/api/revalidate` after writing |
 | **`scripts/backfill-play-counts.mjs`** | **Instantly** — same auto-revalidate |
-| **Dashboard UI** (Add Games / edit / delete) | **Up to ~1 hour** — the UI does **not** bust the web cache yet; it waits for the site's revalidate timer |
+| **Dashboard UI** (Add Games / edit / delete) | **Up to ~1 hour** — the UI does **not** bust the web cache itself; it waits for the site's revalidate timer, or you press **Revalidate live site** on Health → Live Site |
 
-To force an instant refresh after a UI change, hit the web endpoint manually:
+To force an instant refresh after a UI change, use **Health → Live Site → Revalidate live site**,
+or hit the web endpoint manually:
 
 ```bash
 curl -X POST "$REVALIDATE_URL" -H "x-revalidate-secret: $REVALIDATE_SECRET" \
@@ -48,6 +49,15 @@ curl -X POST "$REVALIDATE_URL" -H "x-revalidate-secret: $REVALIDATE_SECRET" \
 
 > A "frozen" live site (newest games missing / wrong order) is a **stale web cache**,
 > not bad data — the rows are already in Supabase. Revalidate to fix.
+
+### The sitemap is a separate cache entry
+
+`/sitemap.xml` is a cached Route Handler with its **own** ISR entry. Busting the catalog
+tag refreshes the data the sitemap reads, but **not** the rendered XML — so a sitemap can
+sit frozen at its last deploy while game pages serve fine. `/api/revalidate` now always
+busts `/sitemap.xml` too. **Health → Live Site** exists to catch this: it diffs the DB
+against the live sitemap and flags games Google can't discover (missing) or will 404 on
+(deleted but still listed).
 
 ---
 
@@ -92,6 +102,7 @@ distribution, shared by `add-game` and the backfill so new and existing rows mat
 | `WEB02_CATEGORIES_PATH` | path to the site's `categories.json` (defaults to the sibling web app) |
 | `REVALIDATE_SECRET` | shared secret for the web's `/api/revalidate` — **must match** `web/.env.local` |
 | `REVALIDATE_URL` | the web revalidate endpoint, e.g. `https://actiongames.io/api/revalidate` |
+| `SITE_URL` | public site to run live checks against (defaults to `https://actiongames.io`) |
 
 `REVALIDATE_SECRET` / `REVALIDATE_URL` are what let the CLI scripts bust the live
 cache. Without them the scripts still write to Supabase but skip revalidation (the
