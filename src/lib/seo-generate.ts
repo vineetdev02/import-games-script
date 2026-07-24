@@ -18,6 +18,17 @@
 export type FaqItem = { question: string; answer: string };
 export type GeneratedContent = { about: string; faq: FaqItem[]; model?: string };
 
+/* OpenRouter caps free models per DAY at the account level (50/day with <10
+ * lifetime credits, 1000/day once you've ever bought ≥10). When that cap is
+ * hit, EVERY free model returns the same 429 — so there's no point trying the
+ * rest of the chain or the rest of the games. Callers catch this to abort. */
+export class DailyRateLimitError extends Error {
+  constructor(message = "OpenRouter free-tier daily request limit reached") {
+    super(message);
+    this.name = "DailyRateLimitError";
+  }
+}
+
 export type GameSeoInput = {
   title: string;
   description?: string | null;
@@ -26,21 +37,25 @@ export type GameSeoInput = {
   tags?: string | null;
 };
 
-/* Ordered free-model fallback chain (best/most-reliable first). Verified live
- * against the OpenRouter models API. Override via SEO_MODELS env var. */
+/* Ordered free-model fallback chain (best/most-reliable first). All entries are
+ * text->text models that exist on OpenRouter's FREE tier as of 2026-07-24
+ * (verified live against https://openrouter.ai/api/v1/models — only models
+ * priced at $0/$0 for both prompt and completion are listed). Re-check with:
+ *   curl -s https://openrouter.ai/api/v1/models | \
+ *     jq -r '.data[]|select(.pricing.prompt=="0" and .pricing.completion=="0")|.id'
+ * Slugs go stale fast — OpenRouter moves models off the free tier without
+ * notice, which shows up as "HTTP 404 … unavailable for free". Override via
+ * SEO_MODELS env var. */
 const DEFAULT_MODELS = [
-  "meta-llama/llama-3.3-70b-instruct:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "nousresearch/hermes-3-llama-3.1-405b:free",
-  "openai/gpt-oss-120b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
-  "google/gemma-4-31b-it:free",
-  "google/gemma-4-26b-a4b-it:free",
-  "qwen/qwen3-coder:free",
-  "nvidia/nemotron-3-nano-30b-a3b:free",
-  "openai/gpt-oss-20b:free",
-  "nvidia/nemotron-nano-9b-v2:free",
-  "openrouter/free",
+  "google/gemma-4-26b-a4b-it:free",         // proven workhorse — clean prose + JSON
+  "google/gemma-4-31b-it:free",             // larger dense instruct, great copy
+  "nvidia/nemotron-3-super-120b-a12b:free", // 120B MoE, strongest general
+  "inclusionai/ling-3.0-flash:free",        // 124B MoE, solid general model
+  "openai/gpt-oss-20b:free",                // 21B MoE, Apache-2.0, reliable
+  "nvidia/nemotron-3-nano-30b-a3b:free",    // efficient 30B
+  "nvidia/nemotron-nano-9b-v2:free",        // small, dependable fallback
+  "nvidia/nemotron-3-ultra-550b-a55b:free", // 550B frontier — heavy last-resort
+  "openrouter/free",                        // random free-model router — catch-all
 ];
 
 export function getModels(): string[] {
@@ -122,6 +137,10 @@ async function callModel(model: string, g: GameSeoInput): Promise<GeneratedConte
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    // Daily cap is account-wide across all free models — signal callers to stop.
+    if (res.status === 429 && /free-models-per-day/i.test(body)) {
+      throw new DailyRateLimitError(`HTTP 429 ${body.slice(0, 120)}`);
+    }
     throw new Error(`HTTP ${res.status} ${body.slice(0, 120)}`);
   }
 
@@ -151,6 +170,8 @@ export async function generateSeoContent(g: GameSeoInput): Promise<GeneratedCont
     try {
       return await callModel(model, g);
     } catch (err) {
+      // Daily cap hits every free model identically — stop, don't burn the chain.
+      if (err instanceof DailyRateLimitError) throw err;
       errors.push(`${model}: ${(err as Error).message}`);
     }
   }

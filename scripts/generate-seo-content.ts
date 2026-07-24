@@ -26,7 +26,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
-import { generateSeoContent, getModels } from "../src/lib/seo-generate";
+import { generateSeoContent, getModels, DailyRateLimitError } from "../src/lib/seo-generate";
 
 type GameRow = {
   id: string | number;
@@ -92,11 +92,13 @@ async function main() {
 
   let done = 0;
   let failed = 0;
+  let capReached = false; // OpenRouter free-tier daily limit — abort the whole run once hit
 
-  for (let i = 0; i < games.length; i += CONCURRENCY) {
+  for (let i = 0; i < games.length && !capReached; i += CONCURRENCY) {
     const batch = games.slice(i, i + CONCURRENCY);
     await Promise.all(
       batch.map(async (g) => {
+        if (capReached) return; // stop firing new requests the moment the cap trips
         try {
           const content = await generateSeoContent(g);
           if (!DRY_RUN) {
@@ -112,6 +114,10 @@ async function main() {
           );
           if (DRY_RUN) console.log(`   ${content.about.slice(0, 120)}…\n`);
         } catch (err) {
+          if (err instanceof DailyRateLimitError) {
+            capReached = true; // don't count/spam — handled once after the loop
+            return;
+          }
           failed++;
           console.warn(`✗ ${g.title}: ${(err as Error).message}`);
         }
@@ -121,6 +127,16 @@ async function main() {
   }
 
   console.log(`\nDone. ${done} generated, ${failed} failed.`);
+  if (capReached) {
+    console.log(
+      "\n⚠  Stopped early: OpenRouter's free-tier DAILY request limit was reached\n" +
+        "   (every free model returns the same 429 once this trips).\n" +
+        "   Fix one of these, then re-run — it resumes where it left off:\n" +
+        "     • Add ≥$10 credit once at https://openrouter.ai/settings/credits\n" +
+        "       → lifts the free cap from ~50/day to 1000/day (no per-request charge).\n" +
+        "     • Or just wait for the daily reset (00:00 UTC) and run again.",
+    );
+  }
 }
 
 main().catch((e) => {
